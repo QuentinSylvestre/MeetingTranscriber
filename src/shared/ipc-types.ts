@@ -71,6 +71,11 @@ export interface IpcChannels {
     request: { srcPath: string; jobId: string; fileName: string };
     response: string;
   };
+  'settings:pick-audio-file': {
+    // Open a native file picker dialog; returns the selected absolute path or null if cancelled.
+    request: { extensions: string[] };
+    response: string | null;
+  };
   // app:reload used by ErrorBoundary (Phase 9)
   'app:reload': {
     request: void;

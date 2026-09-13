@@ -37,6 +37,17 @@ export function registerSettingsHandlers(): void {
     store.setPreference(key, value as Preferences[typeof key]);
   });
 
+  // Open a native file picker and return the selected absolute path (or null if cancelled).
+  ipcMain.handle('settings:pick-audio-file', async (_event, { extensions }: { extensions: string[] }) => {
+    const { dialog } = await import('electron');
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Audio files', extensions: extensions.map(e => e.replace(/^\./, '')) }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
   // Copy an uploaded file into the recordings folder so it passes path confinement checks.
   // Returns the destination absolute path.
   ipcMain.handle('settings:copy-upload', (_event, { srcPath, jobId, fileName }: { srcPath: string; jobId: string; fileName: string }) => {

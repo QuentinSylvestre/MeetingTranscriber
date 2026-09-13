@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { PROVIDER_NAMES, PROVIDER_LABELS } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -8,9 +8,14 @@ interface UploadViewProps {
   onJobQueued?: (jobId: string, audioPath: string) => void;
 }
 
+interface SelectedFile {
+  name: string;
+  sizeMb: number;
+  srcPath: string; // absolute path — from drag (.path) or native picker dialog
+}
+
 export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [selected, setSelected] = useState<SelectedFile | null>(null);
   const [provider, setProvider] = useState<ProviderName>('assemblyai');
   const [language, setLanguage] = useState<'fr'|'en'|'auto'>('auto');
   const [title, setTitle] = useState('');
@@ -18,46 +23,42 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const validate = (f: File): string | null => {
-    const ext = '.' + (f.name.split('.').pop() ?? '').toLowerCase();
-    return ACCEPTED_EXTENSIONS.includes(ext)
-      ? null
-      : `Unsupported format. Accepted: ${ACCEPTED_EXTENSIONS.join(' ')}`;
+  const validateExt = (name: string): boolean => {
+    const ext = '.' + (name.split('.').pop() ?? '').toLowerCase();
+    return ACCEPTED_EXTENSIONS.includes(ext);
   };
 
-  const handleSelect = (f: File) => {
-    const err = validate(f);
-    if (err) { setError(err); setFile(null); }
-    else { setError(null); setFile(f); }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleSelect(f);
+  // Both click and drop open the native OS file picker — File.path is unavailable
+  // in sandboxed renderers so we never rely on it.
+  const handleClick = async () => {
+    const srcPath = await window.electronAPI.invoke('settings:pick-audio-file', {
+      extensions: ACCEPTED_EXTENSIONS,
+    }) as string | null;
+    if (!srcPath) return; // cancelled
+    const name = srcPath.split(/[\\/]/).pop() ?? srcPath;
+    if (!validateExt(name)) {
+      setError(`Unsupported format. Accepted: ${ACCEPTED_EXTENSIONS.join(' ')}`);
+      return;
+    }
+    setError(null);
+    setSelected({ name, sizeMb: 0, srcPath }); // size not critical for display
   };
 
   const handleTranscribe = async () => {
-    if (!file) { setError('Please select an audio file.'); return; }
-    // Electron extends the web File API with a .path property containing the absolute path.
-    const filePath = (file as File & { path?: string }).path;
-    if (!filePath) {
-      setError('Could not read file path — please try dragging the file instead of using the picker.');
-      return;
-    }
+    if (!selected) { setError('Please select an audio file.'); return; }
     setSubmitting(true);
     setError(null);
     try {
       const jobId = `job-${Date.now()}`;
       const destPath = await window.electronAPI.invoke('settings:copy-upload', {
-        srcPath: filePath,
+        srcPath: selected.srcPath,
         jobId,
-        fileName: file.name,
+        fileName: selected.name,
       }) as string;
 
       await window.electronAPI.invoke('transcription:start-job', {
         jobId,
-        title: title.trim() || file.name.replace(/\.[^.]+$/, ''),
+        title: title.trim() || selected.name.replace(/\.[^.]+$/, ''),
         audioPath: destPath,
         provider,
         model: 'default',
@@ -77,41 +78,35 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         <div className="page-subtitle">Transcribe an existing recording</div>
       </div>
 
-      {/* Drop zone */}
+      {/* Drop zone — click anywhere to open native file picker.
+           Drag-and-drop is visually supported but File.path is unavailable
+           in sandboxed renderers (sandbox:true), so both paths use the native dialog. */}
       <div
-        className={`drop-zone${dragOver ? ' over' : ''}${file ? ' has-file' : ''}`}
-        onClick={() => fileInputRef.current?.click()}
+        className={`drop-zone${dragOver ? ' over' : ''}${selected ? ' has-file' : ''}`}
+        onClick={handleClick}
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
+        onDrop={e => { e.preventDefault(); setDragOver(false); void handleClick(); }}
         role="button" tabIndex={0}
-        aria-label="Drop audio file here or click to browse"
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && fileInputRef.current?.click()}
+        aria-label="Click to browse for an audio file"
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && void handleClick()}
       >
-        {file ? (
+        {selected ? (
           <>
             <div className="drop-icon">✅</div>
-            <div className="drop-text">{file.name}</div>
+            <div className="drop-text">{selected.name}</div>
             <div className="drop-hint">
-              {(file.size / 1024 / 1024).toFixed(1)} MB — click to change
+              {selected.sizeMb > 0 ? `${selected.sizeMb.toFixed(1)} MB — ` : ''}click to change
             </div>
           </>
         ) : (
           <>
             <div className="drop-icon">🎵</div>
-            <div className="drop-text">Drop audio file here or click to browse</div>
+            <div className="drop-text">Click to browse for an audio file</div>
             <div className="drop-hint">{ACCEPTED_EXTENSIONS.join('  ')}</div>
           </>
         )}
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={ACCEPTED_EXTENSIONS.join(',')}
-        style={{ display: 'none' }}
-        onChange={e => e.target.files?.[0] && handleSelect(e.target.files[0])}
-      />
 
       {error && <p className="text-error text-sm mb-4" role="alert">{error}</p>}
 
@@ -151,9 +146,9 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
       </div>
 
       <button
-        className={`btn btn-primary btn-lg${(!file || submitting) ? ' btn-disabled' : ''}`}
+        className={`btn btn-primary btn-lg${(!selected || submitting) ? ' btn-disabled' : ''}`}
         onClick={handleTranscribe}
-        disabled={!file || submitting}
+        disabled={!selected || submitting}
       >
         {submitting ? '⏳ Starting…' : '▶ Transcribe'}
       </button>
