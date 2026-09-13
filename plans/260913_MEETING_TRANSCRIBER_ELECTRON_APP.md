@@ -730,8 +730,11 @@ The protocol supports HTTP range requests by delegating to `protocol.registerFil
 - [ ] Export to `.txt` produces a correctly formatted transcript.
 - [ ] Export to clipboard copies the same format.
 - [ ] Chunk separator headers visible for chunked jobs.
-- [ ] `app://` request to `../../secrets.json` returns 403 (verified in unit test by mocking the protocol handler).
-- [ ] `tests/unit/transcript-view.test.ts` passes.
+- [x] `app://` request to `../../secrets.json` returns 403 (verified in unit test by mocking the protocol handler).
+- [x] `tests/unit/transcript-view.test.ts` passes.
+
+**Implementation (2026-09-13, code: 0b50762 + fix: d52d6e0)**
+Phase 8 delivers transcript view, audio player, app:// protocol, and export. `registerAppProtocol()` confines to userData + recordingsFolder with UNC guard and path traversal blocking via `isPathAllowed()` (exported for testing). `formatTranscript()` applies speaker display-name mappings and formats as `[HH:MM:SS] Name: text`. `AudioPlayer` exposes `seekTo(ms)` via `useImperativeHandle`; `TranscriptView` holds the ref and wires speaker-turn seek through it. `useTranscript` adds error state. Review fixes: UNC guard added, protocol test imports real `isPathAllowed()`, `document.querySelector('audio')` removed, `export:to-clipboard` guards empty transcript, SpeakerLabel handles Space+Enter, filename sanitization extended. 72 tests pass.
 
 ---
 
@@ -1065,3 +1068,21 @@ Implementation health: Green.
 | R8-R13 | Low | Confirmed-safe items: URL constant clean, parse safety, single-chunk prefix correct, type names consistent, `fs.readFileSync` consistent, hardcoded prompt acceptable | User: accepted |
 
 QA annotation: Step 5b SKIP — OpenAI/Google integration requires live API keys and audio files; covered by Phase 7 manual integration test. Unit tests (52/52) cover label mapping, File API trigger, parse error handling, chunk prefix logic.
+
+### 2026-09-13 — Implementation Review (after Phase 8, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+8 findings (3 High, 3 Medium, 2 Low). All 3 Highs and 3 Mediums fixed in commit `d52d6e0`.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `app://` UNC path handling was wrong code (fail-safe but incorrect); no UNC test coverage; exit criterion unproven | Fixed — explicit UNC guard added; `isPathAllowed()` exported; protocol test imports real function |
+| R2 | High | `useTranscript` swallowed IPC errors silently — user saw "No transcript content" on failure | Fixed — `error` state added; `TranscriptView` renders error message |
+| R3 | High | `document.querySelector('audio')` seek diverges from plan spec (plan required `useImperativeHandle` ref) | Fixed — `AudioPlayer` converted to `forwardRef` exposing `seekTo`; `TranscriptView` uses `audioPlayerRef` |
+| R4 | Medium | Protocol test tested a local re-implementation, not `protocol.ts` — exit criterion unmet | Fixed — test imports `isPathAllowed` from `protocol.ts` |
+| R5 | Medium | `export:to-clipboard` wrote empty string silently returning `{ copied: true }` | Fixed — guards empty text; returns `{ copied: false, reason: 'no_turns' }` |
+| R6 | Medium | `SpeakerLabel` `role="button"` handled Enter but not Space — ARIA violation | Fixed — Space added to onKeyDown handler |
+| R7 | Low | `export:to-file` filename sanitization missed trailing dots/spaces and Windows reserved names | Fixed — reserved names prefixed with `transcript_`; trailing whitespace/dots stripped |
+| R8 | Low | `getPreference('recordingsFolder')` called on every protocol request — confirmed memory-cached; no disk I/O per request | User: accepted — confirmed OK from store.ts |
+
+QA annotation: Step 5b SKIP — transcript view, audio player, speaker renaming, and export all require live Electron with a completed transcription job. Unit tests (72/72) cover protocol confinement, formatTime, app:// URL construction, export format, and clipboard guard.
