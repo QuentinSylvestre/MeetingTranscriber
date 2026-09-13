@@ -42,9 +42,16 @@ export class AssemblyAIProvider implements TranscriptionProvider {
     // 2. Create transcription request
     const transcriptBody: Record<string, unknown> = {
       audio_url: upload_url,
+      // Explicitly request current flagship + fallback model.
+      // API default is already ["universal-3-5-pro", "universal-2"] but specifying it
+      // makes the intent clear and guards against future default changes.
+      speech_models: ['universal-3-5-pro', 'universal-2'],
       speaker_labels: options.diarize,
       language_code: options.language === 'auto' ? undefined : options.language,
       language_detection: options.language === 'auto',
+      // Optional natural-language guidance for improved accuracy on domain-specific content.
+      // Particularly useful for U3.5 Pro (e.g. "French business meeting with technical vocabulary").
+      ...(options.prompt != null && options.prompt.trim() !== '' ? { prompt: options.prompt } : {}),
     };
 
     const createResp = await fetch(`${BASE_URL}/v2/transcript`, {
