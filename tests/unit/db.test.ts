@@ -1,0 +1,175 @@
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import Database from 'better-sqlite3';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Use an in-memory database for all tests.
+// The module mock below intercepts getDb() and returns this instance,
+// so jobs.ts and transcript.ts operate on the in-memory db without touching disk.
+let db: Database.Database;
+
+// Hoist the mock so it applies before any module is imported.
+// The factory captures `db` by reference — the beforeAll assignment lands before
+// the first test runs, so every getDb() call sees the real in-memory instance.
+vi.mock('../../src/main/db/index', () => ({
+  getDb: () => db,
+  initDb: vi.fn(),
+  closeDb: vi.fn(),
+}));
+
+// Electron is not present in Vitest's Node environment.
+vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => '/tmp/test'), ipcMain: {} },
+  ipcMain: { handle: vi.fn() },
+}));
+
+const MIGRATIONS_DIR = path.join(
+  process.cwd(),
+  'src', 'main', 'db', 'migrations'
+);
+
+beforeAll(() => {
+  db = new Database(':memory:');
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  // Apply the migration so all tables exist
+  const sql = fs.readFileSync(
+    path.join(MIGRATIONS_DIR, '001_initial.sql'),
+    'utf-8'
+  );
+  db.exec(sql);
+});
+
+afterAll(() => {
+  db.close();
+});
+
+describe('jobs CRUD', () => {
+  it('creates and retrieves a job', async () => {
+    const { createJob, getJob } = await import('../../src/main/db/jobs');
+    const job = {
+      id: 'job-001',
+      title: 'Test Meeting',
+      created_at: Date.now(),
+      audio_path: '/tmp/test.mp3',
+      duration_s: 120,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    };
+    createJob(job);
+    const retrieved = getJob('job-001');
+    expect(retrieved).not.toBeNull();
+    expect(retrieved?.title).toBe('Test Meeting');
+    expect(retrieved?.provider).toBe('assemblyai');
+  });
+
+  it('updates job status', async () => {
+    const { updateJobStatus, getJob } = await import('../../src/main/db/jobs');
+    updateJobStatus('job-001', 'done', null, 130.5);
+    const job = getJob('job-001');
+    expect(job?.status).toBe('done');
+    expect(job?.duration_s).toBe(130.5);
+  });
+
+  it('lists jobs in reverse chronological order', async () => {
+    const { createJob, listJobs } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-002',
+      title: 'Second Job',
+      created_at: Date.now() + 1000,
+      audio_path: '/tmp/test2.mp3',
+      duration_s: null,
+      provider: 'openai' as const,
+      model: 'gpt-4o-transcribe-diarize',
+      language: 'en' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 2,
+    });
+    const jobs = listJobs();
+    expect(jobs.length).toBeGreaterThanOrEqual(2);
+    expect(jobs[0].id).toBe('job-002'); // Most recent first
+  });
+
+  it('cascade deletes transcript_turns and speaker_mappings', async () => {
+    const { createJob, deleteJob } = await import('../../src/main/db/jobs');
+    const { saveTranscript, getTranscript, updateSpeakerMapping, getSpeakerMappings } = await import('../../src/main/db/transcript');
+
+    createJob({
+      id: 'job-cascade',
+      title: 'Cascade Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/cascade.mp3',
+      duration_s: null,
+      provider: 'elevenlabs' as const,
+      model: 'scribe_v2',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+    saveTranscript([
+      { id: 'turn-1', job_id: 'job-cascade', chunk_index: 0, speaker_label: 'Speaker A', start_ms: 0, end_ms: 1000, text: 'Hello' },
+    ]);
+    updateSpeakerMapping('job-cascade', 0, 'Speaker A', 'Alice');
+
+    deleteJob('job-cascade');
+
+    expect(getTranscript('job-cascade')).toHaveLength(0);
+    expect(getSpeakerMappings('job-cascade')).toHaveLength(0);
+  });
+});
+
+describe('transcript CRUD', () => {
+  it('batch insert of 1000 turns completes in < 50ms', async () => {
+    const { createJob } = await import('../../src/main/db/jobs');
+    const { saveTranscript, getTranscript } = await import('../../src/main/db/transcript');
+
+    createJob({
+      id: 'job-perf',
+      title: 'Performance Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/perf.mp3',
+      duration_s: null,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+
+    const turns = Array.from({ length: 1000 }, (_, i) => ({
+      id: `turn-perf-${i}`,
+      job_id: 'job-perf',
+      chunk_index: 0,
+      speaker_label: 'Speaker A',
+      start_ms: i * 100,
+      end_ms: i * 100 + 100,
+      text: `Turn ${i} text content`,
+    }));
+
+    const start = Date.now();
+    saveTranscript(turns);
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(50);
+    expect(getTranscript('job-perf')).toHaveLength(1000);
+  });
+
+  it('saves and retrieves speaker mappings with upsert', async () => {
+    const { updateSpeakerMapping, getSpeakerMappings } = await import('../../src/main/db/transcript');
+
+    // Use job-001 which was created in the jobs tests
+    updateSpeakerMapping('job-001', 0, 'Speaker A', 'Alice');
+    updateSpeakerMapping('job-001', 0, 'Speaker A', 'Alice Updated'); // upsert
+
+    const mappings = getSpeakerMappings('job-001');
+    const aliceMapping = mappings.find(m => m.speaker_label === 'Speaker A');
+    expect(aliceMapping?.display_name).toBe('Alice Updated');
+  });
+});

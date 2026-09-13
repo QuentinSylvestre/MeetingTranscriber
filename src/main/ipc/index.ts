@@ -1,4 +1,6 @@
 import { registerSettingsHandlers } from './settings';
+import { registerDbHandlers } from './db';
+import { initDb } from '../db/index';
 
 // S2: Guard against double-registration on hot reload. ipcMain.handle throws on duplicate registration.
 let handlersRegistered = false;
@@ -6,8 +8,9 @@ let handlersRegistered = false;
 export function registerAllHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
+  initDb();
   registerSettingsHandlers();
-  // Phase 3: registerDbHandlers() will be added here
+  registerDbHandlers();
   // Phase 4: registerRecorderHandlers() will be added here
   // Phase 5: registerChunkerHandlers() will be added here
   // Phase 6: registerTranscriptionHandlers() will be added here

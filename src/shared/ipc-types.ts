@@ -1,5 +1,38 @@
 // ALL IPC channels declared here. Never use string literals elsewhere.
 
+export type JobStatus = 'pending' | 'uploading' | 'transcribing' | 'done' | 'failed';
+
+export interface Job {
+  id: string;
+  title: string;
+  created_at: number; // Unix ms
+  audio_path: string;
+  duration_s: number | null;
+  provider: ProviderName;
+  model: string;
+  language: 'fr' | 'en' | 'auto';
+  status: JobStatus;
+  error_msg: string | null;
+  chunk_count: number;
+}
+
+export interface TranscriptTurn {
+  id: string;
+  job_id: string;
+  chunk_index: number;
+  speaker_label: string;
+  start_ms: number; // absolute from recording start
+  end_ms: number;
+  text: string;
+}
+
+export interface SpeakerMapping {
+  job_id: string;
+  chunk_index: number;
+  speaker_label: string;
+  display_name: string;
+}
+
 // Settings channels
 export interface IpcChannels {
   'settings:has-secret': {
@@ -31,6 +64,44 @@ export interface IpcChannels {
   'app:reload': {
     request: void;
     response: void;
+  };
+
+  // Database channels (Phase 3)
+  'db:create-job': {
+    request: { job: Omit<Job, 'status' | 'error_msg'> & { status?: JobStatus } };
+    response: void;
+  };
+  'db:update-job-status': {
+    request: { id: string; status: JobStatus; error_msg?: string; duration_s?: number };
+    response: void;
+  };
+  'db:get-job': {
+    request: { id: string };
+    response: Job | null;
+  };
+  'db:list-jobs': {
+    request: void;
+    response: Job[];
+  };
+  'db:delete-job': {
+    request: { id: string };
+    response: void;
+  };
+  'db:save-transcript': {
+    request: { turns: TranscriptTurn[] };
+    response: void;
+  };
+  'db:get-transcript': {
+    request: { job_id: string };
+    response: TranscriptTurn[];
+  };
+  'db:update-speaker-mapping': {
+    request: { job_id: string; chunk_index: number; speaker_label: string; display_name: string };
+    response: void;
+  };
+  'db:get-speaker-mappings': {
+    request: { job_id: string };
+    response: SpeakerMapping[];
   };
 }
 

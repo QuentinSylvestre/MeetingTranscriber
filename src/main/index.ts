@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { initLogger } from './logger';
 import { registerAllHandlers } from './ipc/index';
+import { closeDb } from './db/index';
 
 // Logger declared at module scope but initialized after app is ready (F9)
 let log: ReturnType<typeof initLogger>;
@@ -48,4 +49,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  closeDb();
 });
