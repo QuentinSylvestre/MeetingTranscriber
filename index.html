@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'" />
+    <!-- connect-src 'none' is intentional: renderer makes NO direct network calls.
+         All API calls flow through IPC to the main process. Dev mode bypasses this file. -->
     <title>Meeting Transcriber</title>
   </head>
   <body>

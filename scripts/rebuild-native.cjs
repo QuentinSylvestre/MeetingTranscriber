@@ -13,7 +13,6 @@ rebuild({
   console.log('Native addons rebuilt successfully.');
 }).catch((err) => {
   console.error('Failed to rebuild native addons:', err.message);
-  // Do NOT throw — postinstall failure blocks npm install entirely.
-  // The verify-abi.ts script will catch this at spike time.
-  process.exit(0);
+  console.error('Run `npm install` again after installing the Windows SDK if needed.');
+  process.exit(1);
 });
