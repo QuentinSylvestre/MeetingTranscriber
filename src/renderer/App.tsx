@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import SettingsView from './views/SettingsView';
 import RecordView from './views/RecordView';
+import UploadView from './views/UploadView';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
@@ -62,7 +63,10 @@ export default function App(): React.ReactElement {
         {currentView === 'record' && (
           <RecordView onJobStopped={handleJobStopped} />
         )}
-        {currentView !== 'settings' && currentView !== 'record' && (
+        {currentView === 'upload' && (
+          <UploadView onTranscribeStarted={(jobId) => { setActiveJobId(jobId); }} />
+        )}
+        {currentView !== 'settings' && currentView !== 'record' && currentView !== 'upload' && (
           <>
             <h2 style={{ marginTop: 0 }}>{currentView.charAt(0).toUpperCase() + currentView.slice(1)}</h2>
             <p style={{ color: '#585b70' }}>

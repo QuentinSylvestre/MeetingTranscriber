@@ -33,6 +33,11 @@ export interface SpeakerMapping {
   display_name: string;
 }
 
+export interface ChunkResult {
+  paths: string[];
+  chunkDurationMs: number; // duration per chunk in ms (Infinity if no chunking)
+}
+
 // Settings channels
 export interface IpcChannels {
   'settings:has-secret': {
@@ -130,6 +135,16 @@ export interface IpcChannels {
   'recorder:pcm-chunk': {
     request: { chunk: number[] };
     response: void;
+  };
+
+  // Chunker channels (Phase 5)
+  'chunker:split': {
+    request: {
+      inputPath: string;
+      provider: ProviderName;
+      outputDir: string;
+    };
+    response: ChunkResult;
   };
 }
 
