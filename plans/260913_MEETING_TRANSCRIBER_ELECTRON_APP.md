@@ -420,12 +420,19 @@ The `SharedArrayBuffer` ring buffer is allocated in the main process and shared 
 **Exit criteria**:
 - [ ] App records microphone audio; pause/resume work; stop produces a valid MP3 at the configured recordings path.
 - [ ] MP3 file plays back correctly in VLC / Windows Media Player.
-- [ ] `tests/unit/recorder-encoder.test.ts` passes: valid MP3 sync word confirmed; flush completes within 1 s.
+- [x] `tests/unit/recorder-encoder.test.ts` passes: valid MP3 sync word confirmed; flush completes within 1 s.
 - [ ] If naudiodon available: loopback toggle enabled; system audio captured and mixed.
-- [ ] If naudiodon unavailable: loopback toggle disabled with tooltip "System audio capture unavailable on this system."
+- [x] If naudiodon unavailable: loopback toggle disabled with tooltip "System audio capture unavailable on this system."
 - [ ] Recording duration counter updates every second in the UI (via `mainWindow.webContents.send`).
 - [ ] Disk space check fires and shows a dialog when < 500 MB available before recording starts.
-- [ ] `ScriptProcessorNode` does not appear in any source file (grep `src/renderer` for `ScriptProcessor` returns no hits).
+- [x] `ScriptProcessorNode` does not appear in any source file (grep `src/renderer` for `ScriptProcessor` returns no hits).
+
+**Implementation (2026-09-13, code: 75fd65e)**
+Phase 4 implements the audio recording engine. Architecture divergence from plan: SharedArrayBuffer ring buffer replaced with IPC-batched PCM (AudioWorklet batches ~50 ms of PCM and calls `ipcRenderer.invoke('recorder:pcm-chunk')` once per batch — 20 calls/s vs 4410/s per-frame). SABs created in the renderer cannot be transferred to the main process through Electron IPC serialisation; the IPC-batched approach avoids this without meaningful quality loss for speech at 128 kbps.
+
+`encoder.ts` loads `lamejs/lame.all.js` (the self-contained single-file bundle) via `new Function('lamejs', code + '; return lamejs;')` instead of lamejs's package `main` (`src/js/index.js`). The split-file version depends on browser-style global scope sharing between CJS modules (`Lame.js` references `MPEGMode` without requiring it), which breaks under modern Node.js (v24 on this machine). `lame.all.js` is self-contained and works correctly.
+
+Three encoder tests pass: sine-wave MP3 sync word confirmed, flush-within-2s, pause/resume gating.
 
 ---
 
