@@ -21,6 +21,10 @@ export function registerDbHandlers(): void {
   });
 
   ipcMain.handle('db:delete-job', (_event, { id }: { id: string }) => {
+    const job = jobs.getJob(id);
+    if (job && (job.status === 'uploading' || job.status === 'transcribing')) {
+      throw new Error('Cannot delete an active job');
+    }
     jobs.deleteJob(id);
   });
 

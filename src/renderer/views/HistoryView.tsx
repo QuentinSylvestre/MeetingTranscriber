@@ -19,7 +19,7 @@ function statusColor(status: string): string {
 }
 
 export default function HistoryView({ onOpenJob }: HistoryViewProps): React.ReactElement {
-  const { jobs, loading, deleteJob } = useHistory();
+  const { jobs, loading, error, deleteJob } = useHistory();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   if (loading) return <div style={{ color: '#cdd6f4' }}>Loading history...</div>;
@@ -27,7 +27,8 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
   return (
     <div style={{ color: '#cdd6f4' }}>
       <h2 style={{ marginTop: 0 }}>History</h2>
-      {jobs.length === 0 && <p style={{ color: '#585b70' }}>No transcription jobs yet.</p>}
+      {error && <p style={{ color: '#f38ba8' }}>Failed to load history: {error}</p>}
+      {jobs.length === 0 && !error && <p style={{ color: '#585b70' }}>No transcription jobs yet.</p>}
       {jobs.map(job => (
         <div
           key={job.id}
@@ -72,7 +73,14 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
             ) : (
               <button
                 onClick={() => setConfirmDelete(job.id)}
-                style={{ background: '#45475a', color: '#cdd6f4', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 12 }}
+                disabled={job.status === 'uploading' || job.status === 'transcribing'}
+                title={(job.status === 'uploading' || job.status === 'transcribing') ? 'Cannot delete an active job' : 'Delete this job'}
+                style={{
+                  background: '#45475a', color: '#cdd6f4', border: 'none', borderRadius: 4,
+                  padding: '4px 12px', fontSize: 12,
+                  opacity: (job.status === 'uploading' || job.status === 'transcribing') ? 0.4 : 1,
+                  cursor: (job.status === 'uploading' || job.status === 'transcribing') ? 'not-allowed' : 'pointer',
+                }}
               >
                 Delete
               </button>

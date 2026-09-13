@@ -5,19 +5,23 @@ import { getStatus as getRecorderStatus, stopRecording } from './recorder/index'
 import { updateJobStatus, listJobs } from './db/jobs';
 
 let _beforeQuitRegistered = false;
+let _quitInProgress = false;
 
 export function registerLifecycleHandlers(getMainWindow: () => BrowserWindow | null): void {
   if (_beforeQuitRegistered) return;
   _beforeQuitRegistered = true;
 
   app.on('before-quit', async (event) => {
+    // Guard: prevent re-entry when app.quit() is called from inside a dialog callback
+    if (_quitInProgress) return;
+
     const recorderStatus = getRecorderStatus();
     const activeJobId = getActiveJobId();
 
     if (recorderStatus === 'recording' || recorderStatus === 'paused') {
       event.preventDefault();
       const win = getMainWindow();
-      if (!win) { app.exit(0); return; }
+      if (!win) { _quitInProgress = true; app.exit(0); return; }
       const response = await dialog.showMessageBox(win, {
         type: 'question',
         message: 'Recording in progress',
@@ -29,9 +33,11 @@ export function registerLifecycleHandlers(getMainWindow: () => BrowserWindow | n
       if (response.response === 0) {
         // Stop & Save
         try { await stopRecording(); } catch (err) { log.error('Error stopping recording on quit:', err); }
+        _quitInProgress = true;
         app.quit();
       } else if (response.response === 1) {
         // Discard — just quit
+        _quitInProgress = true;
         app.quit();
       }
       // response 2 = Cancel: do nothing, app stays open
@@ -41,7 +47,7 @@ export function registerLifecycleHandlers(getMainWindow: () => BrowserWindow | n
     if (activeJobId !== null) {
       event.preventDefault();
       const win = getMainWindow();
-      if (!win) { app.exit(0); return; }
+      if (!win) { _quitInProgress = true; app.exit(0); return; }
       const response = await dialog.showMessageBox(win, {
         type: 'question',
         message: 'Transcription in progress',
@@ -54,6 +60,7 @@ export function registerLifecycleHandlers(getMainWindow: () => BrowserWindow | n
         cancelJob();
         // Wait briefly for cancellation to propagate
         await new Promise(r => setTimeout(r, 500));
+        _quitInProgress = true;
         app.quit();
       }
       // response 1 = Wait: do nothing
