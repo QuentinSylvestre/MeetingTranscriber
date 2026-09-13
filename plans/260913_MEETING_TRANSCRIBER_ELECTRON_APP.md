@@ -1,0 +1,873 @@
+# Meeting Transcriber Electron App
+
+> **Date**: 2026-09-13
+> **Status**: Draft  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Last Updated**: <set by /qclose at archival>
+> **Scope**: Windows-only Electron app for recording and transcribing meetings with speaker diarization via multiple cloud providers
+> **Estimated effort**: 6–9 weeks (solo developer)
+
+---
+
+## Intent
+
+### Problem statement & desired outcomes
+
+Users need a desktop app to transcribe meeting recordings (uploaded or recorded live) with speaker identification (diarization). The app must support multiple transcription providers and models, handle long recordings (up to 4 hours), allow users to identify each speaker by name, and export the result as a readable transcript. The focus is on French and English, with strong French accuracy as a priority.
+
+### Success criteria
+
+- SC-1: User can upload an audio file and receive a diarized transcript with speaker-labeled turns and timestamps, exportable to a formatted text file or clipboard.
+- SC-2: User can record audio from the app (microphone + optional system audio loopback, device-selectable), pause/resume, then trigger transcription at the end of the session with the same export workflow.
+- SC-3: All four providers (AssemblyAI, ElevenLabs Scribe v2, OpenAI gpt-4o-transcribe-diarize, Google Gemini 3.5 Transcribe) are integrated with per-provider credential configuration persisted securely via Windows Credential Manager (Electron safeStorage).
+- SC-4: Speaker labels can be assigned real names inline in the transcript view, with audio playback at the corresponding timestamp to assist identification; all occurrences of the label update on rename.
+- SC-5: Transcription history is persisted to SQLite; completed jobs survive app restart and can be re-exported without re-transcribing.
+- SC-6: The app handles recordings requiring chunking (OpenAI ≤1500 s, Google ≤30 min with diarization) transparently, presenting all speaker labels across all chunks in the name-assignment UI.
+- SC-7: The app runs on Windows only, as a foreground-only application with no background process or tray icon.
+
+### Scope boundaries & non-goals
+
+**In scope:**
+- Windows only (x64)
+- Batch transcription only (no real-time streaming during recording)
+- One active job at a time (no parallel transcription or transcription-during-recording)
+- Four providers: AssemblyAI, ElevenLabs Scribe v2, OpenAI gpt-4o-transcribe-diarize, Google Gemini 3.5 Transcribe
+- MP3 recording format (128 kbps)
+- Sidebar-navigation UI (Record, Upload, History, Settings)
+- Export to formatted `.txt` and clipboard
+- Persistent job history (SQLite, no search/filter in v1)
+- Optional custom job title; falls back to auto-generated (date + duration + provider)
+- Language selector per job (French / English / auto-detect)
+- Playback speed control in transcript player (1x, 1.5x, 2x)
+- Retry from scratch on transcription failure
+- NSIS installer via electron-builder
+
+**Out of scope (v1):**
+- Real-time streaming transcription
+- Local/offline models
+- macOS or Linux
+- Multiple simultaneous transcription jobs
+- Loopback via virtual audio device (fallback to naudiodon native addon)
+- Speaker reference clips (OpenAI diarize feature)
+- Chunk-level retry checkpointing
+- Transcript search or filtering
+- `.docx` or `.md` export formats
+- Background operation / system tray
+
+---
+
+## 1) Current State
+
+Greenfield — no existing codebase. Git repository initialized at `meeting_transcriber/` with only the `plans/` directory committed. No `package.json`, no source files, no test infra.
+
+**Confirmed external constraints** (verified during `/qexplore`):
+- AssemblyAI Universal-3.5 Pro: 5 GB / 10 hr per job — no app-level chunking needed.
+- ElevenLabs Scribe v2: 10 hr limit; auto-chunks internally for files >8 min — transparent to the caller.
+- OpenAI `gpt-4o-transcribe-diarize`: hard limit of 1500 s (~25 min) duration AND 25 MB file size — app must chunk before sending.
+- Google Gemini 3.5 Transcribe (`gemini-3.5-transcribe-preview`): 30 min limit with diarization enabled; 8-speaker cap (3+ speakers marked experimental); accepts `audio/mp3` and `audio/mpeg` — confirmed from Google developer docs.
+- WASAPI loopback is not exposed by Electron's Web Audio / MediaRecorder API — requires the `naudiodon` native addon.
+- `naudiodon` + `better-sqlite3` prebuilt ABI availability for target Electron version: **unverified until Phase 1 spike**.
+- Target Electron version: **Electron 36** (ships Node.js 22.x; stable LTS as of mid-2026). Phase 1 must verify prebuilt availability before architecture commits.
+
+## 2) Goal
+
+Build a production-ready Windows desktop app that records or accepts meeting audio, transcribes it via one of four cloud providers with speaker diarization, lets users assign real names to speakers inline while listening to the audio, persists job history to SQLite, and exports the result as a formatted transcript.
+
+## 3) Design Decisions
+
+| Decision | Choice | Alternatives considered | Rationale |
+|---|---|---|---|
+| Platform | Windows x64 only | Cross-platform | User requirement; avoids platform matrix for native addons |
+| Electron version | Electron 36 (Node 22.x) | Electron 32, 33, latest | Stable LTS as of mid-2026; widest prebuilt coverage for native addons; Phase 1 spike must confirm |
+| UI framework | React 18 + shadcn/ui | Vue, Svelte, plain HTML | Largest ecosystem for Electron; shadcn/ui avoids runtime CSS-in-JS overhead |
+| Navigation model | `useState`-based view enum in `App.tsx` | React Router, Electron multi-window | Single-window app with few views; React Router adds unnecessary complexity |
+| IPC pattern | `contextBridge` + `ipcRenderer`/`ipcMain` typed channels; `sandbox: true`; `nodeIntegration: false` | Direct `remote` module (deprecated), `nodeIntegration: true` | Security best practice; renderer has zero Node.js access; all dangerous ops in main process |
+| Mic audio capture to main process | `AudioWorkletNode` writes PCM to a `SharedArrayBuffer` ring buffer; main process drains via `setInterval` (not per-frame IPC) | Per-frame IPC sends, MediaRecorder, ScriptProcessorNode (deprecated) | Per-frame IPC causes main-process stall and potential OOM on long recordings; SharedArrayBuffer avoids IPC per chunk |
+| Audio recording | naudiodon (WASAPI loopback) + `AudioWorkletNode` (mic) + MP3 encoding via `lamejs` (pure JS, Worker thread) | MediaRecorder (no WASAPI), virtual cable (user setup required) | naudiodon provides direct WASAPI access; lamejs Worker thread avoids blocking main process |
+| Audio format | MP3 at 128 kbps | WAV (too large), OPUS (not accepted by all providers), AAC | Accepted by all four providers (confirmed); 128 kbps ≈ 60 MB/hr; good quality for speech |
+| Audio chunking | ffmpeg-static (spawned from main process, `shell: false`) with re-encode at boundaries (`-acodec libmp3lame`) | Pure JS audio splitting, stream-copy `-c copy` | `-c copy` produces keyframe-aligned splits that can violate provider duration limits; re-encode guarantees exact boundaries |
+| Chunk target duration | 1000 s (not 1200 s) | 1200 s | 1200 s with re-encode still risks exceeding the 1500 s OpenAI limit due to encoding variance; 1000 s provides safe margin |
+| Speaker label reconciliation across chunks | Manual (user assigns names per chunk label) | Automatic stitching via embedding similarity | Avoids unreliable cross-chunk label matching; user hears audio anyway to assign names |
+| Chunk timestamp offset | Applied in `runner.ts` before DB write (`turn.startMs += chunkIndex × chunkDurationMs`) | Applied in renderer | Keeps DB data absolute; renderer audio seek always uses DB-stored absolute timestamps |
+| Persistence | SQLite via better-sqlite3; large inserts in transactions | sql.js (WASM, no native), LevelDB, JSON files | Synchronous API fits Electron main process; batch transaction keeps per-turn write latency sub-millisecond; fallback to sql.js if ABI fails (Phase 1 spike) |
+| Credential storage | Electron `safeStorage` (DPAPI on Windows) | Plaintext config file, encrypted config with app-owned key | DPAPI is the OS-provided secure enclave; no key management burden |
+| API key exposure to renderer | Never — renderer uses `settings:has-secret` (boolean) and `settings:test-secret`; no plaintext key returned | `settings:get-secret` returning plaintext | Renderer never holds plaintext API keys; main process uses keys directly for HTTP calls |
+| Settings / preferences | JSON file in `app.getPath('userData')` + safeStorage for secrets | All in SQLite | Separation of concerns: SQLite for job history, JSON for user preferences |
+| Provider abstraction | `TranscriptionProvider` interface per adapter | Single monolithic provider class | Enables independent testing per provider; chunking logic encapsulated per adapter |
+| Export format | Structured text: `[HH:MM:SS] Speaker Name: utterance` blocks | Markdown, JSON, CSV | Human-readable; clipboard-friendly; no external dependencies |
+| Distribution | electron-builder NSIS installer | Portable zip, Windows Store (MSIX) | Standard Electron distribution path; MSIX requires signing infrastructure not yet in place |
+| `app://` protocol file confinement | Serve only files within the recordings folder + `userData`; reject any path outside those two roots | No confinement | Path traversal vulnerability if not confined; user files must never be served to the renderer |
+| Testing | Vitest for unit/integration (provider adapters, db layer, chunker); manual E2E for recording + transcription | Playwright for Electron E2E | Audio recording cannot be reliably automated headlessly; provider tests need live API keys |
+| Logging | `electron-log` writing to `userData/logs/app.log` with rotation | Console only, no structured logging | Enables post-mortem debugging; API errors logged without logging key values |
+| Fallback for naudiodon failure | Log error, disable loopback toggle in UI, mic-only mode | Hard fail, alternative virtual cable | Graceful degradation; loopback is optional; user can still record mic |
+
+## 4) External Dependencies & Costs
+
+### Required external changes
+
+| Category | Change needed | Owner | Status |
+|---|---|---|---|
+| CI/CD | None — local build only | — | N/A |
+| IAM / Permissions | None | — | N/A |
+| Cloud resources | None — all APIs are user-supplied keys | — | N/A |
+| Data migration / backfill | None — greenfield | — | N/A |
+| Rollout / cutover | None — new app, no existing users | — | N/A |
+| Cleanup after rollback window | None | — | N/A |
+| Secrets / Env vars | API keys stored by user in Settings view via safeStorage; no server-side secrets | User | Pending |
+| DNS / Networking | None | — | N/A |
+| Third-party services | AssemblyAI, ElevenLabs, OpenAI, Google Gemini accounts required for testing | Developer | Pending |
+
+### Cost impact
+
+API costs are borne by the user via their own keys. Developer testing costs during implementation:
+- AssemblyAI: ~$0.21/hr audio — a 1-hour test recording costs ~$0.21.
+- ElevenLabs Scribe v2: ~$0.22/hr.
+- OpenAI gpt-4o-transcribe-diarize: token-based, estimated ~$0.27–0.35/hr for a 1-hour meeting.
+- Google Gemini 3.5 Transcribe: ~$0.30/hr.
+
+Testing budget: ~$5–10 per provider for integration testing. Total developer testing cost: ~$20–40. No recurring infrastructure cost.
+
+## 5) Implementation Phases
+
+### Phase 1: Project scaffold + dependency spike [QA]
+
+**Goal**: Bootstrap the Electron + React project, verify native addon (naudiodon + better-sqlite3) ABI compatibility with Electron 36, establish the build pipeline including electron-rebuild, set up logging and navigation model.
+
+**Why horizontal**: This phase establishes the project structure and verifies the critical ABI assumption that all subsequent phases depend on. Phases 2–10 cannot begin until the ABI spike confirms (or forces a fallback decision on) naudiodon and better-sqlite3.
+
+**File scope**:
+- `package.json`, `package-lock.json`
+- `electron-builder.yml`
+- `tsconfig.json`, `tsconfig.node.json`
+- `vite.config.ts` (renderer bundler)
+- `src/main/index.ts` (Electron main entry — stub)
+- `src/preload/index.ts` (contextBridge stub)
+- `src/renderer/main.tsx` (React entry — stub)
+- `src/renderer/App.tsx` (sidebar shell + navigation state)
+- `src/main/logger.ts` (electron-log setup)
+- `scripts/verify-abi.ts` (spike script — disposable after Phase 1)
+- `.gitignore`
+
+**Covers**: SC-7
+
+**Steps**:
+
+1. Initialize project with `npm init` and install core dependencies:
+   - `electron@36`, `electron-builder`, `electron-rebuild`
+   - `react@18`, `react-dom@18`, `@types/react`, `@types/react-dom`
+   - `vite`, `@vitejs/plugin-react`, `vite-plugin-electron`
+   - `naudiodon`, `better-sqlite3`, `@types/better-sqlite3`
+   - `lamejs`, `@types/lamejs`
+   - `ffmpeg-static`
+   - `electron-log`
+   - TypeScript, `ts-node`
+   - `vitest`, `@vitest/ui`
+
+2. Configure `BrowserWindow` in `src/main/index.ts` with:
+   ```typescript
+   new BrowserWindow({
+     webPreferences: {
+       preload: path.join(__dirname, 'preload.js'),
+       contextIsolation: true,
+       nodeIntegration: false,
+       sandbox: true,         // Explicitly enable sandbox
+     }
+   });
+   ```
+
+3. Configure `electron-builder.yml`:
+   - `appId: com.meetingtranscriber.app`
+   - `win.target: [{target: "nsis", arch: ["x64"]}]`
+   - `asar: true`
+   - `asarUnpack: ["node_modules/naudiodon/**", "node_modules/better-sqlite3/**", "node_modules/ffmpeg-static/**"]` — native files cannot be in asar
+   - `extraResources: [{from: "node_modules/ffmpeg-static/ffmpeg.exe", to: "ffmpeg.exe"}]`
+   - `nsis.oneClick: false`, `nsis.allowToChangeInstallationDirectory: true`
+   - `postinstall` npm script: `electron-rebuild -f -w naudiodon better-sqlite3` (rebuilds before pack, not after)
+
+   > **Rejected:** `afterPack` hook for electron-rebuild — by `afterPack` the asar archive is sealed; native `.node` files already inside asar. **Use instead:** `postinstall` npm script + `asarUnpack` entries.
+
+4. Set up `electron-log` in `src/main/logger.ts`:
+   - Log to `app.getPath('userData')/logs/app.log` with 7-day rotation.
+   - Log level: `info` in production, `debug` in development.
+   - Never log API key values — log only key names and boolean presence.
+
+5. Implement navigation model in `App.tsx`:
+   ```typescript
+   type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
+   const [currentView, setCurrentView] = useState<View>('record');
+   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+   ```
+   Sidebar renders with 4 items (Record, Upload, History, Settings) plus a loading indicator when `activeJobId` is non-null.
+
+6. Write `scripts/verify-abi.ts` spike: attempt `require('naudiodon')` and `require('better-sqlite3')` within an Electron main process context. Print `naudiodon: OK/FAIL` and `better-sqlite3: OK/FAIL`. Run with `npx electron scripts/verify-abi.ts`.
+
+7. If either addon fails:
+   - **naudiodon**: disable WASAPI loopback for v1; record fallback in Design Decisions. Mic-only recording proceeds via Web Audio API.
+   - **better-sqlite3**: switch to `sql.js` (WASM — no rebuild). Update Phase 3 accordingly.
+
+8. Configure `.gitignore` (node_modules, dist, out, `*.node` unless in release bundle).
+
+**Exit criteria**:
+- [ ] `npm run dev` launches the Electron window with sidebar, 4 navigation items, and navigation state working.
+- [ ] `scripts/verify-abi.ts` runs without error and prints `naudiodon: OK` and `better-sqlite3: OK` (or documents which fallback was chosen and why in this plan's Design Decisions table).
+- [ ] `npm run build` produces a NSIS installer with native `.node` files outside asar (verified with `asar list dist/*.asar` — no `.node` files listed).
+- [ ] `sandbox: true` is set in the `BrowserWindow` `webPreferences`.
+- [ ] `electron-log` writes to `userData/logs/app.log` on launch.
+- [ ] `.gitignore` committed; `node_modules/` not tracked.
+
+---
+
+### Phase 2: IPC layer + settings store [QA]
+
+**Goal**: Establish the typed IPC bridge between main and renderer, and implement the settings store (safeStorage-backed API keys + JSON preferences).
+
+**File scope**:
+- `src/main/ipc/index.ts` (IPC handler registration)
+- `src/main/ipc/settings.ts` (settings IPC handlers)
+- `src/preload/index.ts` (contextBridge exposures — update)
+- `src/main/settings/store.ts` (settings store implementation)
+- `src/shared/ipc-types.ts` (shared TypeScript channel/payload types)
+- `src/renderer/views/SettingsView.tsx`
+- `src/renderer/hooks/useSettings.ts`
+- `tests/unit/settings.test.ts`
+
+**Covers**: SC-3, SC-7
+
+**Steps**:
+
+1. Define `src/shared/ipc-types.ts` with typed channel names and payload interfaces. Enumerate ALL channels up front — the exhaustive list prevents undeclared channels from bypassing the type system.
+
+2. Implement `src/main/settings/store.ts`:
+   - **Secrets** (API keys): `app.safeStorage.encryptString()` / `decryptString()`, stored as hex in `userData/secrets.json`. One entry per provider key name. Keys are never returned to the renderer.
+   - **Preferences** (recordings folder, default language): plain JSON at `userData/preferences.json`. Schema-validated on read; defaults applied for missing keys.
+   - Exposed methods: `hasSecret(key): boolean`, `setSecret(key, value)`, `getPreference(key)`, `setPreference(key, value)`.
+   - `testSecret(key, provider)`: calls the provider's cheapest validation endpoint (e.g., AssemblyAI account info) using the stored key. Returns `{ valid: boolean; error?: string }` — never returns the key value.
+
+3. Register IPC handlers in `src/main/ipc/settings.ts`:
+   - `settings:has-secret { key }` → `{ present: boolean }` — renderer can check if a key is configured without receiving it.
+   - `settings:set-secret { key, value }` → `void` — renderer sets keys.
+   - `settings:test-secret { key, provider }` → `{ valid: boolean; error?: string }` — renderer can validate a key.
+   - `settings:get-preference { key }` → `{ value: unknown }`
+   - `settings:set-preference { key, value }` → `void`
+   - **No `settings:get-secret` handler** — the renderer never receives a decrypted key value.
+
+4. Expose channels via `contextBridge` (no Node.js APIs leaked to renderer).
+
+5. Build `SettingsView.tsx`: per-provider API key input fields (4 providers), recordings folder picker, default language selector. Each key field shows `●●●●●●●` placeholder when a key is configured (from `settings:has-secret`). "Test" button per provider calls `settings:test-secret`. Save button invokes `settings:set-secret`. API key input uses `type="password"` with show/hide toggle.
+
+6. Write Vitest unit tests for `settings/store.ts` mocking `app.safeStorage`: encrypt/decrypt round-trip, missing-key returns false from `hasSecret`, preferences default schema, `testSecret` calls the correct endpoint.
+
+> **Rejected:** `settings:get-secret` IPC channel returning plaintext API key to renderer — security exposure; renderer process should never hold decrypted credentials. **Use instead:** `settings:has-secret` (boolean) + `settings:test-secret` (validation result); main process uses keys directly for all HTTP calls.
+
+**Exit criteria**:
+- [ ] Settings view renders with 4 API key fields showing masked placeholders when configured, and test buttons.
+- [ ] Entering and saving an API key persists it encrypted; reopening the app shows the field with masked placeholder.
+- [ ] Test button calls provider's validation endpoint and shows "Valid" or error message — does not reveal the key.
+- [ ] `tests/unit/settings.test.ts` passes: safeStorage round-trip, `hasSecret` returns false when absent, `testSecret` calls correct endpoint.
+- [ ] DevTools console confirms no `window.require`, no `window.process`, no `window.__secrets`.
+- [ ] Grep `src/main/ipc/settings.ts` for `get-secret` returns no IPC handler definition.
+
+---
+
+### Phase 3: Database layer [QA]
+
+**Goal**: Implement the SQLite persistence layer with migrations and the full data model for jobs, transcript turns, and speaker mappings.
+
+**File scope**:
+- `src/main/db/index.ts` (db connection + migration runner)
+- `src/main/db/migrations/001_initial.sql`
+- `src/main/db/jobs.ts` (job CRUD)
+- `src/main/db/transcript.ts` (turns + speaker mappings CRUD)
+- `src/main/ipc/db.ts` (IPC handlers for db operations)
+- `src/shared/ipc-types.ts` (add db channels)
+- `src/preload/index.ts` (add db exposures)
+- `tests/unit/db.test.ts`
+
+**Covers**: SC-5, SC-6
+
+**Schema** (`001_initial.sql`):
+
+```sql
+PRAGMA journal_mode=WAL;
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id          TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  audio_path  TEXT NOT NULL,
+  duration_s  REAL,
+  provider    TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  language    TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'pending',
+  error_msg   TEXT,
+  chunk_count INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS transcript_turns (
+  id            TEXT PRIMARY KEY,
+  job_id        TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  chunk_index   INTEGER NOT NULL DEFAULT 0,
+  speaker_label TEXT NOT NULL,
+  start_ms      INTEGER NOT NULL,   -- absolute offset from recording start
+  end_ms        INTEGER NOT NULL,   -- absolute offset from recording start
+  text          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS speaker_mappings (
+  job_id        TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  chunk_index   INTEGER NOT NULL DEFAULT 0,
+  speaker_label TEXT NOT NULL,
+  display_name  TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (job_id, chunk_index, speaker_label)
+);
+```
+
+**Note on timestamps**: `start_ms` and `end_ms` in `transcript_turns` store **absolute** offsets from the recording start (not chunk-relative). `runner.ts` applies `chunkIndex × chunkDurationMs` before inserting. The audio player always seeks to these absolute values.
+
+**Steps**:
+
+1. `src/main/db/index.ts`: open `userData/db.sqlite` with better-sqlite3; enable WAL; run pending migration files in order on startup.
+
+2. `jobs.ts` and `transcript.ts`: all SQL uses named parameters (`@param`). Large batch inserts (e.g., saving all turns for a job) run inside a single `db.transaction()` wrapper to keep latency sub-millisecond regardless of turn count.
+
+3. Register IPC handlers: `db:create-job`, `db:update-job-status`, `db:get-job`, `db:list-jobs`, `db:delete-job`, `db:save-transcript`, `db:get-transcript`, `db:update-speaker-mapping`, `db:get-speaker-mappings`.
+
+4. Write Vitest unit tests using `:memory:` database: CRUD round-trip, batch transaction insert of 1000 turns (timing assertion: < 50 ms), cascade delete verified.
+
+> **Rejected:** storing transcript as a single JSON blob in the jobs table. **Use instead:** normalized `transcript_turns` and `speaker_mappings` tables with cascade delete.
+
+> **Rejected:** individual `INSERT` per turn outside a transaction — 4-hour meeting with thousands of turns at ~1 ms/insert = multi-second stall. **Use instead:** `db.transaction(() => turns.forEach(t => stmt.run(t)))()`.
+
+**Exit criteria**:
+- [ ] `db.sqlite` created in `userData` on first launch; migration applied once (re-run is idempotent due to `CREATE TABLE IF NOT EXISTS`).
+- [ ] `tests/unit/db.test.ts` passes: full CRUD round-trip; batch insert of 1000 turns completes in < 50 ms; cascade delete verified.
+- [ ] Grep `src/main/db/` for `${` (JS template interpolation in SQL) returns no hits.
+
+---
+
+### Phase 4: Audio recording engine [QA]
+
+**Goal**: Implement the recording pipeline — mic capture via `AudioWorkletNode` + `SharedArrayBuffer`, optional WASAPI loopback via naudiodon, pause/resume, MP3 encoding via lamejs (pure JS, Worker thread), file write to the configured recordings folder.
+
+**File scope**:
+- `src/main/recorder/index.ts` (recording orchestrator — main process)
+- `src/main/recorder/loopback.ts` (naudiodon WASAPI capture, or stub if fallback)
+- `src/main/recorder/encoder.ts` (lamejs MP3 encoding Worker thread)
+- `src/renderer/worklets/mic-capture.worklet.ts` (AudioWorklet processor)
+- `src/main/ipc/recorder.ts` (IPC handlers)
+- `src/renderer/views/RecordView.tsx`
+- `src/renderer/hooks/useRecorder.ts`
+- `src/shared/ipc-types.ts` (add recorder channels)
+- `src/preload/index.ts` (add recorder exposures)
+- `tests/unit/recorder-encoder.test.ts`
+
+**Covers**: SC-2, SC-7
+
+**Mic audio architecture** (addresses review finding F1 — PCM IPC stall):
+
+```
+Renderer (AudioWorkletNode) --[SharedArrayBuffer ring buffer]--> Main process drain (setInterval 50 ms)
+```
+
+The `SharedArrayBuffer` ring buffer is allocated in the main process and shared with the renderer via `contextBridge`. The `AudioWorkletNode` writes PCM Int16 frames to the ring buffer without any IPC call. The main process drains the ring buffer every 50 ms via `setInterval` and forwards chunks to the encoder Worker.
+
+**Steps**:
+
+1. `src/renderer/worklets/mic-capture.worklet.ts`: an `AudioWorkletProcessor` subclass that receives mic audio frames and writes interleaved Int16 PCM to the shared ring buffer. Handles buffer-full condition by dropping frames and logging a drop counter (never blocks).
+
+2. `src/main/recorder/encoder.ts`: a Node.js `worker_threads` Worker. Accepts PCM Int16 chunks via `parentPort.on('message')`. Encodes to MP3 at 128 kbps using `lamejs` (`Mp3Encoder`). Appends encoded frames to the output file via `fs.appendFileSync`. Implements `start(outputPath)`, `pause()`, `resume()`, and `flush()` commands. On `flush`: finalizes the MP3 frame stream and posts `{ type: 'flushed' }` back to the parent — the parent `stop()` awaits this message before resolving.
+
+   ```typescript
+   // stop() in recorder orchestrator — drain guard
+   async stop(): Promise<void> {
+     return new Promise((resolve) => {
+       this.encoderWorker.once('message', (msg) => {
+         if (msg.type === 'flushed') resolve();
+       });
+       this.encoderWorker.postMessage({ type: 'flush' });
+     });
+   }
+   ```
+
+   > **Rejected:** `lamejs` WASM description — lamejs is pure JavaScript, not WASM. The Worker thread approach remains correct; only the description was wrong. **Use instead:** "lamejs pure JS running in a Worker thread."
+
+3. `src/main/recorder/loopback.ts`: wrap `naudiodon` WASAPI loopback. If naudiodon was disabled in Phase 1 fallback, export a `LoopbackDisabled` stub. The orchestrator checks availability before enabling the UI toggle.
+
+4. `src/main/recorder/index.ts`: orchestrate mic drain (from SharedArrayBuffer) + loopback streams. Mix PCM buffers and forward to encoder Worker. Expose `start`, `pause`, `resume`, `stop` via IPC. On `start`: create job row in DB (`status: 'pending'`), write `audio_path`. Emit progress to renderer via `mainWindow.webContents.send('recorder:progress', { durationMs })` every second.
+
+   > **Rejected:** `ipcMain.emit` for sending progress to renderer — `ipcMain.emit` routes to main-process listeners only; the renderer never receives it. **Use instead:** `mainWindow.webContents.send(channel, data)`.
+
+5. Disk space check before recording: call `fs.statfs(recordingsFolder)` (Node 22 built-in); warn with a dialog if available space < 500 MB.
+
+6. `RecordView.tsx`: mic device selector (`navigator.mediaDevices.enumerateDevices()` filtered to `audioinput`), loopback toggle (disabled if naudiodon unavailable), Record/Pause/Resume/Stop buttons with elapsed time display. On Stop: navigates to progress view.
+
+7. Unit tests for `encoder.ts`: feed synthetic 16-bit PCM chunks of known length, assert output buffer starts with MP3 sync word `0xFF 0xFB`, assert `flush` completes within 1 s.
+
+> **Rejected:** per-frame IPC for PCM audio — stalls the main process and causes OOM on long recordings. **Use instead:** SharedArrayBuffer ring buffer written by AudioWorkletNode, drained by main process setInterval.
+
+> **Rejected:** `ScriptProcessorNode` for mic capture — deprecated, removed in some Chromium builds shipped with Electron 36. **Use instead:** `AudioWorkletNode` with a custom processor.
+
+**Exit criteria**:
+- [ ] App records microphone audio; pause/resume work; stop produces a valid MP3 at the configured recordings path.
+- [ ] MP3 file plays back correctly in VLC / Windows Media Player.
+- [ ] `tests/unit/recorder-encoder.test.ts` passes: valid MP3 sync word confirmed; flush completes within 1 s.
+- [ ] If naudiodon available: loopback toggle enabled; system audio captured and mixed.
+- [ ] If naudiodon unavailable: loopback toggle disabled with tooltip "System audio capture unavailable on this system."
+- [ ] Recording duration counter updates every second in the UI (via `mainWindow.webContents.send`).
+- [ ] Disk space check fires and shows a dialog when < 500 MB available before recording starts.
+- [ ] `ScriptProcessorNode` does not appear in any source file (grep `src/renderer` for `ScriptProcessor` returns no hits).
+
+---
+
+### Phase 5: Audio chunker + file upload [QA]
+
+**Goal**: Implement the audio chunking pipeline using ffmpeg-static with re-encode for exact boundaries, and the file upload/ingestion logic for the Upload view.
+
+**File scope**:
+- `src/main/chunker/index.ts`
+- `src/main/ipc/chunker.ts`
+- `src/renderer/views/UploadView.tsx`
+- `src/renderer/hooks/useUpload.ts`
+- `src/shared/ipc-types.ts`
+- `src/preload/index.ts`
+- `tests/unit/chunker.test.ts`
+- `tests/fixtures/10s-silence.mp3` (test fixture)
+
+**Covers**: SC-1, SC-6
+
+**Steps**:
+
+1. `src/main/chunker/index.ts`:
+
+```typescript
+export async function chunkAudio(
+  inputPath: string,
+  chunkDurationS: number,       // target: 1000 s
+  overlapS: number,             // default: 5 s
+  outputDir: string
+): Promise<{ paths: string[]; chunkDurationMs: number }>;
+```
+
+Spawns ffmpeg-static with:
+```
+ffmpeg -i <inputPath> -f segment -segment_time <chunkDurationS>
+       -reset_timestamps 1 -acodec libmp3lame -ab 128k
+       -y <outputDir>/chunk_%03d.mp3
+```
+`shell: false` always. Input path passed as a string array element (never concatenated into a shell command string).
+
+Disk space check before chunking: a 4-hour file re-encoded to 5 chunks requires ~250 MB of scratch space. Check `fs.statfs(outputDir)` for at least `fileSize × 1.5` free space.
+
+For providers not needing chunking (AssemblyAI, ElevenLabs): return `{ paths: [inputPath], chunkDurationMs: Infinity }` without invoking ffmpeg.
+
+2. After transcription completes (or fails), `runner.ts` deletes all chunk temp files in a `finally` block:
+```typescript
+try {
+  // transcription logic
+} finally {
+  await Promise.all(chunkPaths.filter(p => p !== inputPath).map(p => fs.unlink(p)));
+  log.info('Chunk temp files cleaned up');
+}
+```
+
+3. `UploadView.tsx`: file picker accepting mp3, mp4, wav, m4a, ogg. Provider selector, model selector, language selector. Optional job title field. Transcribe button.
+
+4. Unit test: `tests/fixtures/10s-silence.mp3` (10-second silent MP3 committed to the repo). `chunkAudio` with `chunkDurationS: 5` produces 2 chunks; assert both are valid MP3 files and their combined size is ≤ the original + 5%.
+
+> **Rejected:** `ffmpeg -c copy` stream-copy split — produces keyframe-aligned boundaries that can exceed the 1500 s OpenAI limit even with a 1200 s target. **Use instead:** `-acodec libmp3lame -reset_timestamps 1` for exact boundary re-encode.
+
+> **Rejected:** shell: true for ffmpeg spawn — filename metacharacter injection risk. **Use instead:** `spawn(ffmpegPath, [...argsArray], { shell: false })`.
+
+**Exit criteria**:
+- [ ] Upload view renders with file picker, provider/model/language selectors, optional title, Transcribe button.
+- [ ] File picker rejects non-audio types with inline error.
+- [ ] `tests/unit/chunker.test.ts` passes: 10-second fixture chunked at 5 s produces 2 valid MP3 files.
+- [ ] `chunkAudio` with AssemblyAI provider returns `[inputPath]` without invoking ffmpeg.
+- [ ] Chunk temp files are deleted after `runner.ts` completes or fails (verified in integration test by checking temp directory after run).
+- [ ] Disk space check warns user if < (fileSize × 1.5) free space before chunking.
+- [ ] Grep `src/main/chunker/` for `shell: true` returns no hits.
+
+---
+
+### Phase 6: Provider adapters — AssemblyAI + ElevenLabs [QA]
+
+**Goal**: Implement the `TranscriptionProvider` interface and the AssemblyAI and ElevenLabs adapters.
+
+**File scope**:
+- `src/main/providers/types.ts`
+- `src/main/providers/assemblyai.ts`
+- `src/main/providers/elevenlabs.ts`
+- `src/main/providers/index.ts`
+- `src/main/transcription/runner.ts`
+- `src/main/ipc/transcription.ts`
+- `src/shared/ipc-types.ts`
+- `src/preload/index.ts`
+- `tests/unit/providers/assemblyai.test.ts`
+- `tests/unit/providers/elevenlabs.test.ts`
+
+**Covers**: SC-1, SC-2, SC-3, SC-5
+
+**Interface** (`src/main/providers/types.ts`):
+
+```typescript
+export interface TranscriptionOptions {
+  language: 'fr' | 'en' | 'auto';
+  diarize: boolean;
+}
+
+export interface SpeakerTurn {
+  speakerLabel: string;  // normalized: 'Speaker A', 'Chunk 0 – Speaker A', etc.
+  startMs: number;       // absolute offset from recording start (after offset applied by runner)
+  endMs: number;
+  text: string;
+}
+
+export interface ChunkResult {
+  chunkIndex: number;
+  turns: SpeakerTurn[];  // startMs/endMs are chunk-relative here; runner applies offset before DB write
+}
+
+export interface TranscriptionProvider {
+  name: string;
+  transcribeFile(
+    filePath: string,
+    options: TranscriptionOptions,
+    onProgress: (status: string) => void,
+    signal: AbortSignal         // wired to a setTimeout in runner for 90-min global timeout
+  ): Promise<ChunkResult[]>;
+}
+```
+
+**`runner.ts` timestamp offset application**:
+```typescript
+// After receiving ChunkResult[] from provider:
+const chunkDurationMs = chunker.chunkDurationMs;
+for (const chunk of chunkResults) {
+  const offsetMs = chunk.chunkIndex * chunkDurationMs;
+  for (const turn of chunk.turns) {
+    turn.startMs += offsetMs;
+    turn.endMs += offsetMs;
+  }
+}
+// Then write to DB
+```
+
+**One-job-at-a-time enforcement in main process**:
+```typescript
+// In runner.ts
+let _activeJobId: string | null = null;
+
+export function startJob(jobId: string): void {
+  if (_activeJobId !== null) {
+    throw new Error(`Job ${_activeJobId} is already running`);
+  }
+  _activeJobId = jobId;
+}
+export function clearActiveJob(): void { _activeJobId = null; }
+```
+
+The IPC handler for `transcription:start-job` checks `_activeJobId !== null` and returns an error to the renderer rather than starting a second job.
+
+**Steps**:
+
+1. `assemblyai.ts`: upload → poll → map `utterances[]` → `ChunkResult`. Normalize speaker labels: AssemblyAI `'A'` → `'Speaker A'`. Poll interval: 5 s. Respect `signal.aborted`.
+
+2. `elevenlabs.ts`: single POST to `https://api.elevenlabs.io/v1/speech-to-text`. Map ElevenLabs integer speaker IDs → `'Speaker 0'`, `'Speaker 1'`. Use `fetch({ signal })` to support cancellation.
+
+3. `runner.ts`: orchestrate job lifecycle. Set `_activeJobId` on start; clear in `finally`. Apply chunk timestamp offsets before DB write. On cancel: set job status `'failed'`, `error_msg: 'Cancelled by user'`.
+
+4. Unit tests: mock `fetch`; verify endpoint URLs, request bodies, response mapping, label normalization, offset not applied (offset is runner's responsibility, not the adapter's).
+
+**Exit criteria**:
+- [ ] `tests/unit/providers/assemblyai.test.ts` passes: polling mocked through `completed`, utterances mapped to `'Speaker A'`/`'Speaker B'`.
+- [ ] `tests/unit/providers/elevenlabs.test.ts` passes: single request mock, integer IDs mapped to `'Speaker 0'`/`'Speaker 1'`.
+- [ ] Manual integration test (live key): 5-minute French MP3 via AssemblyAI and ElevenLabs; transcript appears in DB with absolute timestamps. Record provider, date, and file used in phase notes below.
+- [ ] Job status transitions: `pending` → `uploading` → `transcribing` → `done` (or `failed`).
+- [ ] Cancel during transcription: `AbortController` signal fires; job status set to `failed`.
+- [ ] `transcription:start-job` with an already-active job returns an error (not a second job started).
+
+---
+
+### Phase 7: Provider adapters — OpenAI + Google [QA]
+
+**Goal**: Implement OpenAI `gpt-4o-transcribe-diarize` and Google Gemini 3.5 Transcribe adapters with chunk-indexed speaker label namespacing.
+
+**File scope**:
+- `src/main/providers/openai.ts`
+- `src/main/providers/google.ts`
+- `src/main/providers/index.ts` (add to registry)
+- `tests/unit/providers/openai.test.ts`
+- `tests/unit/providers/google.test.ts`
+
+**Covers**: SC-3, SC-6
+
+**Speaker label namespacing**: all labels from chunk N are prefixed with `'Chunk N – '` (e.g., `'Chunk 0 – Speaker 0'`, `'Chunk 1 – Speaker 0'`). This ensures distinct `(chunkIndex, speakerLabel)` keys in `speaker_mappings`, preventing cross-chunk label conflation.
+
+**Steps**:
+
+1. `openai.ts`: POST each chunk to `https://api.openai.com/v1/audio/transcriptions` with `model: 'gpt-4o-transcribe-diarize'`, `response_format: 'verbose_json'`. File size validation: 1000 s at 128 kbps = ~15 MB, well within the 25 MB limit. Map `segments[].speaker` to `'Chunk N – Speaker X'` pattern.
+
+2. `google.ts`: POST to `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe-preview:generateContent`. Inline base64 data with `mimeType: 'audio/mp3'`. **Base64 size check**: if `base64.length > 20_000_000` (20 MB), switch to Google File API upload:
+   ```typescript
+   // File API path:
+   const fileUri = await uploadGoogleFile(chunkPath, apiKey);
+   // Use fileUri in the content part instead of inlineData
+   ```
+   Log a warning when the File API path is taken.
+
+3. Unit tests: verify chunk-indexed labeling (`'Chunk 0 – Speaker 0'`, `'Chunk 1 – Speaker 0'`); verify base64 size check triggers File API path when size > 20 MB.
+
+> **Rejected:** Google Cloud Speech-to-Text v2 API — ~$1.00/hr vs Gemini 3.5 Transcribe ~$0.30/hr. **Use instead:** `gemini-3.5-transcribe-preview` via Generative Language API.
+
+**Exit criteria**:
+- [ ] `tests/unit/providers/openai.test.ts` passes: 2 mocked chunks produce labels `'Chunk 0 – Speaker 0'`, `'Chunk 1 – Speaker 0'`, etc.
+- [ ] `tests/unit/providers/google.test.ts` passes: equivalent labeling; base64 > 20 MB triggers File API mock.
+- [ ] Manual integration test: 45-minute French MP3 via OpenAI (3 chunks expected, labels chunk-prefixed). Record result in phase notes.
+- [ ] Manual integration test: same file via Google. Record result.
+- [ ] Google adapter logs a warning (does not fail) when File API path is taken.
+- [ ] Chunk temp files deleted after run (from Phase 5 `finally` block in `runner.ts`).
+
+---
+
+### Phase 8: Job progress view + transcript view + speaker mapping [QA]
+
+**Goal**: Implement the job-progress view and transcript view with audio player, inline speaker name assignment with audio playback, and export.
+
+**File scope**:
+- `src/renderer/views/JobProgressView.tsx`
+- `src/renderer/views/TranscriptView.tsx`
+- `src/renderer/components/AudioPlayer.tsx`
+- `src/renderer/components/SpeakerTurn.tsx`
+- `src/renderer/components/SpeakerLabel.tsx`
+- `src/renderer/hooks/useTranscript.ts`
+- `src/renderer/hooks/useAudioPlayer.ts`
+- `src/main/ipc/protocol.ts` (custom `app://` protocol registration)
+- `src/main/ipc/export.ts`
+- `src/shared/ipc-types.ts`
+- `src/preload/index.ts`
+- `tests/unit/transcript-view.test.ts`
+
+**Covers**: SC-1, SC-2, SC-4, SC-5, SC-6
+
+**`app://` protocol confinement** (addresses review finding F4):
+
+```typescript
+// src/main/ipc/protocol.ts
+const ALLOWED_ROOTS = [
+  app.getPath('userData'),
+  store.getPreference('recordingsFolder') as string,
+];
+
+protocol.registerFileProtocol('app', (request, callback) => {
+  const url = new URL(request.url);
+  const filePath = path.normalize(decodeURIComponent(url.pathname));
+  const isAllowed = ALLOWED_ROOTS.some(root =>
+    filePath.startsWith(path.normalize(root) + path.sep)
+  );
+  if (!isAllowed) {
+    log.warn(`Blocked app:// request outside allowed roots: ${filePath}`);
+    return callback({ statusCode: 403 });
+  }
+  callback({ path: filePath });
+});
+```
+
+The protocol supports HTTP range requests by delegating to `protocol.registerFileProtocol`'s built-in range handling, enabling the `<audio>` element to stream rather than buffer the entire file.
+
+**Speaker mapping state** (addresses review finding F13):
+
+`useTranscript.ts` maintains a `speakerMappings: Map<string, string>` in React state (key: `'${chunkIndex}::${speakerLabel}'`, value: display name). `SpeakerLabel` components read from this map. When the user renames a label, `useTranscript` calls `db:update-speaker-mapping` via IPC and updates the React state map — all `SpeakerLabel` instances with the same key re-render immediately via React reconciliation.
+
+**Steps**:
+
+1. Register `app://` protocol in main process with confinement check on `app.whenReady()`.
+
+2. `JobProgressView.tsx`: status messages from `transcription:get-progress` poll (500 ms interval); indeterminate progress bar; Cancel button; auto-navigates to TranscriptView on `status === 'done'`; error state with Retry button on `status === 'failed'`.
+
+3. `AudioPlayer.tsx`: HTML5 `<audio src="app://...">` with custom controls. Play/pause, seek slider, speed selector (0.75×, 1×, 1.5×, 2×). `seekTo(ms: number)` exposed via `useImperativeHandle` ref.
+
+4. `SpeakerLabel.tsx`: displays display name (or AI label if unmapped). Click: calls `audioPlayerRef.current.seekTo(turn.startMs)` and plays. Double-click (or single-click if unmapped): shows inline `<input>` pre-filled with current name. On blur/Enter: calls `useTranscript.renameSpeaker(chunkIndex, speakerLabel, newName)` which updates DB + React state.
+
+5. `TranscriptView.tsx`: `AudioPlayer` at top; scrollable list of `SpeakerTurn` components; chunk separator headers (`— Chunk 1 —`) between chunk groups for chunked jobs; Export button.
+
+6. `export.ts` IPC handler: `export:to-file` queries all turns + mappings, formats as `[HH:MM:SS] Display Name: text`, saves via `dialog.showSaveDialog`. `export:to-clipboard` same format via `clipboard.writeText`.
+
+7. Unit tests (React Testing Library): render TranscriptView with mocked data; assert speaker label renders display name; assert inline edit updates all occurrences; assert audio player seekTo is called on label click.
+
+> **Rejected:** loading audio as ArrayBuffer → Blob URL — large files (>100 MB) fully loaded into renderer memory. **Use instead:** custom `app://` protocol with range-request support, so `<audio>` streams.
+
+**Exit criteria**:
+- [ ] Job-progress view shows updating status messages; Cancel aborts and sets job to `failed`.
+- [ ] Transcript view renders turns for a completed job; audio player plays the source recording via `app://`.
+- [ ] Clicking a speaker label seeks to the correct absolute timestamp and plays.
+- [ ] Renaming a speaker label updates all occurrences in the view and persists to DB.
+- [ ] Export to `.txt` produces a correctly formatted transcript.
+- [ ] Export to clipboard copies the same format.
+- [ ] Chunk separator headers visible for chunked jobs.
+- [ ] `app://` request to `../../secrets.json` returns 403 (verified in unit test by mocking the protocol handler).
+- [ ] `tests/unit/transcript-view.test.ts` passes.
+
+---
+
+### Phase 9: History view + app polish + error handling [QA]
+
+**Goal**: Implement the job history view, app-close safety guards, error boundary, and overall UX polish.
+
+**File scope**:
+- `src/renderer/views/HistoryView.tsx`
+- `src/renderer/hooks/useHistory.ts`
+- `src/main/app-lifecycle.ts`
+- `src/renderer/components/ErrorBoundary.tsx`
+- `src/renderer/components/Sidebar.tsx` (finalize)
+- `src/main/ipc/lifecycle.ts`
+- `src/shared/ipc-types.ts`
+- `src/preload/index.ts`
+
+**Covers**: SC-5, SC-7
+
+**Steps**:
+
+1. `HistoryView.tsx`: chronological job list; click `done` job → TranscriptView; click `failed` job → error message + Retry. Delete with confirmation dialog → `db:delete-job`.
+
+2. `app-lifecycle.ts`:
+   - Mid-recording close: `dialog.showMessageBoxSync` — "Stop & Save" (aborts cleanly, writes MP3) or "Discard" (deletes partial file).
+   - Mid-transcription close: "Cancel & Quit" (aborts job, sets `failed`) or "Wait" (keeps window open).
+   - On app startup: check for any job with `status === 'uploading'` or `status === 'transcribing'` — these indicate a crash mid-job. Update their status to `'failed'` with `error_msg: 'Interrupted by app close'`; show a notification to the user.
+
+3. `ErrorBoundary.tsx`: wraps all views; on uncaught render error, shows friendly error screen with "Reload" button (`ipcRenderer.invoke('app:reload')`).
+
+4. Sidebar: active view highlighted; spinner on sidebar icon when `activeJobId !== null`.
+
+5. Final pass: all IPC async calls have loading states; all provider error responses produce actionable messages (missing key → "API key not configured — go to Settings"; quota exceeded → "API quota exceeded — check your account").
+
+**Exit criteria**:
+- [ ] History lists jobs in reverse chronological order; clicking a completed job opens transcript.
+- [ ] Closing mid-recording shows save/discard dialog; Save produces valid MP3.
+- [ ] Closing mid-transcription shows cancel/wait dialog; Cancel sets job to `failed`.
+- [ ] On startup after mid-job crash: interrupted jobs shown as `failed` with "Interrupted by app close" message.
+- [ ] Uncaught renderer exception shows ErrorBoundary screen.
+- [ ] All four providers show actionable error message when key missing or quota exceeded.
+
+---
+
+### Phase 10: Build pipeline + installer [QA]
+
+**Goal**: Finalize the electron-builder configuration for the production NSIS installer, ensure native addons are correctly unpacked, and bundle ffmpeg-static.
+
+**File scope**:
+- `electron-builder.yml` (finalize)
+- `package.json` (postinstall script)
+- `build/icons/icon.png`, `build/icons/icon.ico`
+- `README.md` (create)
+
+**Covers**: SC-7
+
+**Steps**:
+
+1. Verify `electron-builder.yml` has correct `asarUnpack` entries for naudiodon, better-sqlite3, and ffmpeg-static.
+
+2. Confirm `postinstall` npm script runs `electron-rebuild` before any build step (not `afterPack`).
+
+3. Add app icon (`build/icons/icon.png` 256×256, `build/icons/icon.ico`).
+
+4. Create `README.md`: installation prerequisites (Windows 10/11 x64), how to set up API keys per provider in Settings, recordings folder configuration, known limitations (loopback fallback if disabled, chunk label reconciliation for OpenAI/Google providers).
+
+5. Smoke-test the installer on a clean Windows machine: install, launch, open Settings, enter an API key, verify it persists after restart.
+
+> **Rejected:** `afterPack` hook for electron-rebuild — asar already sealed at that point. **Use instead:** `postinstall` npm script.
+
+**Exit criteria**:
+- [ ] `npm run build` produces a NSIS installer in `dist/`.
+- [ ] Installing and launching on a clean Windows 10/11 machine shows the full UI with no "module not found" errors in logs.
+- [ ] `asar list dist/*.asar` shows no `.node` files inside the archive.
+- [ ] `ffmpeg.exe` present in the installed app's resources directory.
+- [ ] App icon visible in taskbar and start menu.
+- [ ] `README.md` created and covers all items listed above.
+
+---
+
+## 6) Risk Assessment
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| naudiodon prebuilts unavailable for Electron 36 ABI | High — WASAPI loopback blocked | Phase 1 spike gate; fallback: disable loopback, mic-only recording |
+| better-sqlite3 prebuilt ABI mismatch | High — full persistence broken | Phase 1 spike gate; fallback: sql.js (WASM, no rebuild required) |
+| OpenAI `gpt-4o-transcribe-diarize` output token truncation (known community reports of 8–9 min cutoff on some chunk sizes) | High — transcripts silently truncated | Chunked at 1000 s (not 1200 s); if truncation recurs, reduce chunk to 480 s; monitor in Phase 7 integration |
+| Google base64 inline data size exceeds API limit | Medium — 1000 s at 128 kbps ≈ ~20.5 MB base64; marginally over the 20 MB soft threshold | Phase 7 `google.ts` implements File API fallback above 20 MB threshold |
+| OpenAI cross-chunk speaker label confusion | Medium — users see 'Chunk 0 – Speaker 0' and 'Chunk 1 – Speaker 0' as separate entries | Chunk separator headers in transcript view; chunk-prefixed labels are distinctive; documented in README as known limitation |
+| SharedArrayBuffer availability under `sandbox: true` | Medium — `sandbox: true` blocks SharedArrayBuffer in some Electron versions without proper headers | Electron 36 with `contextIsolation: true` supports SharedArrayBuffer; Phase 1 spike must confirm |
+| lamejs encoding quality for meeting audio | Low | 128 kbps is standard for speech; upgrade path to 192 kbps configurable in settings |
+| DPAPI safeStorage unavailable in some Windows configurations | Low | safeStorage gracefully degrades; documented in README |
+| App-close mid-transcription loses job context | Low | Mitigated by persisting job row at start and startup recovery check in Phase 9 |
+
+## 7) Verification
+
+**Per-phase**: each phase has `[QA]` annotation and exit criteria checklists.
+
+**Integration tests** (manual, require live API keys — record provider, date, audio file used in phase notes):
+- Phase 6: 5-minute French MP3 via AssemblyAI and ElevenLabs.
+- Phase 7: 45-minute French MP3 via OpenAI (3 chunks) and Google (3 chunks).
+- Phase 8: end-to-end user journey from upload to export.
+- Phase 10: clean-install smoke test.
+
+**Unit test suite**: `npm test` (Vitest). Target coverage: provider adapters, db layer, chunker, encoder, protocol handler confinement.
+
+**Manual E2E scenarios** (not automated):
+1. Record 2-minute test meeting (mic only) → stop → transcribe (AssemblyAI) → assign speaker names → export.
+2. Upload pre-recorded 45-minute MP3 → transcribe (OpenAI) → verify chunk separators and chunk-prefixed labels → assign names → export.
+3. Upload 4-hour MP3 → transcribe (AssemblyAI) → verify full history.
+4. Close app during recording → verify save/discard dialog.
+5. Close app during transcription → verify cancel dialog.
+6. Restart app after mid-job crash → verify interrupted job shown as failed.
+
+## 8) Documentation Updates
+
+| Document | Update needed | Phase |
+|---|---|---|
+| `README.md` | Create: installation, prerequisites, API key setup per provider, known limitations | 10 |
+| `AGENTS.md` | Create: Doc & Test Guidelines bootstrap (proposed separately after plan commit) | N/A (doc-table-only) |
+
+## 9) Implementation Divergences from Plan
+<Reserved — filled during implementation>
+
+## Follow-up Work (Deferred)
+
+1. **WASAPI loopback via naudiodon (if Phase 1 fallback triggered).** If Phase 1 determines naudiodon prebuilts are unavailable and loopback is disabled, implement a v2 path using a compiled naudiodon or an alternative. Source: Risk Assessment row 1.
+
+2. **OpenAI cross-chunk speaker auto-reconciliation.** Manual label presentation is the v1 approach (Design Decisions — speaker label reconciliation). A v2 path using speaker reference clips or embedding similarity could automate stitching. Source: Design Decisions.
+
+3. **Transcript search + filter in history view.** Chronological browse only in v1. Full-text SQLite FTS5 search is straightforward to add. Source: `/qexplore` Q23 decision.
+
+4. **Playwright E2E automation for recording flow.** Audio recording cannot be reliably automated headlessly. A v2 approach could mock audio devices via virtual cable + Playwright for Electron. Source: Phase 7 QA environment note.
+
+## Review Log
+
+### 2026-09-13 — Plan Creation (via /qplan)
+
+High-effort review (4 personas: Architect, Senior engineer, Security auditor, Reliability engineer). 20 findings (10 High, 6 Medium, 4 Low). All 10 High auto-resolved; 5 Medium auto-resolved; 1 Medium (SharedArrayBuffer + sandbox:true compatibility) added to Risk Assessment; 4 Low auto-resolved.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| F1 | High | Per-frame IPC for PCM audio stalls main process and causes OOM on long recordings | Fixed — replaced with SharedArrayBuffer ring buffer + AudioWorkletNode drain pattern in Phase 4 |
+| F2 | High | lamejs described as WASM; it is pure JavaScript | Fixed — description corrected to "pure JS, runs in a Worker thread" in Phase 4 and Design Decisions |
+| F3 | High | better-sqlite3 sync IPC handlers freeze UI on large transcript batch writes | Fixed — Phase 3 specifies `db.transaction()` wrapper for batch inserts with < 50 ms timing assertion |
+| F4 | High | `app://` protocol has no path confinement — arbitrary file traversal possible | Fixed — Phase 8 specifies confinement to recordings folder + userData roots with 403 on violation |
+| F5 | High | `ffmpeg -c copy` keyframe-aligned split can exceed 1500 s OpenAI limit | Fixed — Phase 5 uses re-encode (`-acodec libmp3lame -reset_timestamps 1`) and 1000 s chunk target |
+| F6 | High | `ipcMain.emit` does not reach renderer — progress push is a no-op | Fixed — Phase 4 uses `mainWindow.webContents.send` throughout |
+| F7 | High | Chunk timestamp offsets never applied — audio seek breaks for all chunks after first | Fixed — Phase 6 `runner.ts` applies `chunkIndex × chunkDurationMs` offset before DB write; Phase 3 schema annotated |
+| F8 | High | `settings:get-secret` returns plaintext API key to renderer — security exposure | Fixed — Phase 2 removes `settings:get-secret`; replaces with `settings:has-secret` + `settings:test-secret` |
+| F9 | High | Worker drain race: final PCM frames dropped if `stop()` called before flush completes | Fixed — Phase 4 `stop()` awaits `flush` message from Worker before resolving |
+| F10 | High | `ScriptProcessorNode` deprecated, removed in some Chromium/Electron 36 builds | Fixed — Phase 4 uses `AudioWorkletNode` throughout; exit criterion greps for `ScriptProcessor` |
+| F11 | Medium | Chunk temp files never cleaned up — accumulate in temp directory | Fixed — Phase 5 `runner.ts` deletes chunk files in `finally` block |
+| F12 | Medium | `electron-rebuild` in `afterPack` — asar sealed before rebuild; native files already archived | Fixed — Phase 1 and Phase 10 use `postinstall` npm script; Design Decisions updated |
+| F13 | Medium | Speaker label rename has no specified state propagation mechanism | Fixed — Phase 8 specifies `useTranscript` hook with `speakerMappings` Map in React state |
+| F14 | Medium | No disk space check before recording or chunking | Fixed — Phase 4 checks before recording; Phase 5 checks before chunking |
+| F15 | Medium | ffmpeg spawned without `shell: false` — filename injection risk | Fixed — Phase 5 specifies `spawn(ffmpegPath, argsArray, { shell: false })`; exit criterion greps for `shell: true` |
+| F16 | Medium | SharedArrayBuffer + `sandbox: true` compatibility unverified for Electron 36 | Added to Risk Assessment as Medium; Phase 1 spike must confirm |
+| F17 | Low | No navigation/routing model specified — implementers would invent incompatible approaches | Fixed — Phase 1 specifies `useState`-based view enum; Design Decisions updated |
+| F18 | Low | `sandbox: true` not specified in BrowserWindow | Fixed — Phase 1 specifies `sandbox: true` in `webPreferences`; exit criterion checks |
+| F19 | Low | No logging/observability layer mentioned | Fixed — Phase 1 sets up `electron-log` writing to `userData/logs/app.log`; Design Decisions updated |
+| F20 | Low | Three stale source references in Follow-up Work (`Q5b`, `Q23`, `OI-3`) | Fixed — replaced with descriptive references |
+
+## Harness Improvement Opportunities
+- `/qexplore` interview enforces one-question-at-a-time but this session had several multi-question turns before the user correction — the harness could enforce it at the tool level, not just by governance instruction. Cost: unclear. Suggested change: add a one-question-at-a-time check to the session-submission hook.
