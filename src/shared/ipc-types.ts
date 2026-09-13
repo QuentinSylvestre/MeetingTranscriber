@@ -103,6 +103,41 @@ export interface IpcChannels {
     request: { job_id: string };
     response: SpeakerMapping[];
   };
+
+  // Recorder channels (Phase 4)
+  'recorder:start': {
+    request: { jobId: string; audioPath: string; micDeviceId?: string; enableLoopback: boolean };
+    response: void;
+  };
+  'recorder:pause': {
+    request: void;
+    response: void;
+  };
+  'recorder:resume': {
+    request: void;
+    response: void;
+  };
+  'recorder:stop': {
+    request: void;
+    response: void;
+  };
+  'recorder:get-devices': {
+    request: void;
+    response: { id: string; label: string }[];
+  };
+  // 'recorder:pcm-chunk' is an invoke channel used for IPC-batched PCM forwarding.
+  // The AudioWorklet batches ~50ms of PCM and sends via ipcRenderer.invoke.
+  'recorder:pcm-chunk': {
+    request: { chunk: number[] };
+    response: void;
+  };
+}
+
+// Push event (main → renderer): NOT an invoke channel.
+// Sent via mainWindow.webContents.send('recorder:progress', payload).
+export interface RecorderProgress {
+  durationMs: number;
+  status: 'recording' | 'paused' | 'stopped';
 }
 
 // Derived type — always in sync with IpcChannels, no manual maintenance needed.

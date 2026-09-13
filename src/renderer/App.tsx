@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import SettingsView from './views/SettingsView';
+import RecordView from './views/RecordView';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
@@ -13,6 +14,11 @@ const NAV_ITEMS: { id: View; label: string }[] = [
 export default function App(): React.ReactElement {
   const [currentView, setCurrentView] = useState<View>('record');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  const handleJobStopped = (jobId: string): void => {
+    setActiveJobId(jobId);
+    // Phase 9 will navigate to the progress/transcript view here.
+  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif' }}>
@@ -52,11 +58,17 @@ export default function App(): React.ReactElement {
       </nav>
       {/* Main content */}
       <main style={{ flex: 1, padding: 24, background: '#1e1e2e', color: '#cdd6f4' }}>
-        <h2 style={{ marginTop: 0 }}>{currentView.charAt(0).toUpperCase() + currentView.slice(1)}</h2>
-        {currentView === 'settings' ? <SettingsView /> : (
-          <p style={{ color: '#585b70' }}>
-            Phase 1 scaffold — content coming in phases 2–9.
-          </p>
+        {currentView === 'settings' && <SettingsView />}
+        {currentView === 'record' && (
+          <RecordView onJobStopped={handleJobStopped} />
+        )}
+        {currentView !== 'settings' && currentView !== 'record' && (
+          <>
+            <h2 style={{ marginTop: 0 }}>{currentView.charAt(0).toUpperCase() + currentView.slice(1)}</h2>
+            <p style={{ color: '#585b70' }}>
+              Phase 1 scaffold — content coming in phases 2–9.
+            </p>
+          </>
         )}
       </main>
     </div>
