@@ -15,13 +15,14 @@
  * IPC (4410 calls/s at 44100 Hz). See Phase 4 implementation notes in the plan.
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, dialog } from 'electron';
 import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
 import log from 'electron-log';
 import { loopbackAvailable } from './loopback';
+import { getPreference } from '../settings/store';
 
 // __dirname is not available in ESM; derive from import.meta.url.
 // vite-plugin-electron compiles main to CJS, so __dirname is available at runtime,
@@ -68,6 +69,14 @@ export function startRecording(jobId: string, audioPath: string): void {
     throw new Error(`Recorder already active (status: ${state.status})`);
   }
 
+  // F2: Confine audioPath to the recordings folder to prevent path traversal.
+  const recordingsFolder = getPreference('recordingsFolder');
+  const resolvedAudioPath = path.resolve(audioPath);
+  const resolvedRecordingsFolder = path.resolve(recordingsFolder);
+  if (!resolvedAudioPath.startsWith(resolvedRecordingsFolder + path.sep)) {
+    throw new Error(`audioPath must be inside the recordings folder: ${recordingsFolder}`);
+  }
+
   // Disk space check: warn if < 500 MB available (Node 22 fs.statfs).
   const dir = path.dirname(audioPath);
   try {
@@ -81,9 +90,18 @@ export function startRecording(jobId: string, audioPath: string): void {
       const availableMb = Math.round(availableBytes / (1024 * 1024));
       if (availableBytes < 500 * 1024 * 1024) {
         log.warn(`Low disk space: ${availableMb} MB available in ${dir}`);
-        // Dialog must be shown in the renderer or via Electron dialog API.
-        // Log only here; the recorder:start IPC handler can check and throw
-        // before starting if you want to surface this as an error.
+        // Show a non-blocking warning dialog.
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win && !win.isDestroyed()) {
+          dialog.showMessageBox(win, {
+            type: 'warning',
+            title: 'Low Disk Space',
+            message: `Only ${availableMb} MB of disk space available.`,
+            detail: 'Recording may fail if space runs out. Consider freeing space or changing the recordings folder in Settings.',
+            buttons: ['OK'],
+          });
+          // Do NOT await — don't block recording start.
+        }
       }
     }
   } catch (err) {
@@ -139,7 +157,7 @@ export function startRecording(jobId: string, audioPath: string): void {
  * Called by the recorder:pcm-chunk IPC handler.
  */
 export function receivePcmChunk(chunk: Int16Array): void {
-  if (state.status !== 'recording' || !state.encoderWorker) return;
+  if ((state.status !== 'recording' && state.status !== 'stopping') || !state.encoderWorker) return;
   state.encoderWorker.postMessage({ type: 'pcm', data: chunk });
 }
 
@@ -193,14 +211,19 @@ export function stopRecording(): Promise<void> {
       reject(new Error('Encoder flush timed out after 5 seconds'));
     }, 5000);
 
-    state.encoderWorker.once('message', (msg: { type: string }) => {
+    state.encoderWorker.once('message', (msg: { type: string; error?: string }) => {
+      clearTimeout(timeout);
+      state.encoderWorker?.terminate().catch(() => {});
+      state.encoderWorker = null;
+      state.status = 'idle';
       if (msg.type === 'flushed') {
-        clearTimeout(timeout);
-        state.encoderWorker?.terminate().catch(() => {});
-        state.encoderWorker = null;
-        state.status = 'idle';
         log.info('Recording stopped and flushed');
         resolve();
+      } else {
+        // Received an error or unexpected message before flushed.
+        const errMsg = msg.error ?? `Unexpected encoder message: ${msg.type}`;
+        log.error('Encoder failed during flush:', errMsg);
+        reject(new Error(errMsg));
       }
     });
 

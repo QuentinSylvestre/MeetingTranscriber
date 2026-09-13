@@ -36,30 +36,34 @@ const _require = createRequire(import.meta.url);
 // Load lame.all.js — the self-contained lamejs bundle.
 // src/js/index.js (lamejs's `main`) has global-scope issues under Node.js;
 // lame.all.js is the single-file build that works correctly.
-function loadLamejs(): { Mp3Encoder: new (channels: number, sampleRate: number, bitRate: number) => {
-  encodeBuffer: (left: Int16Array, right?: Int16Array) => Int8Array;
-  flush: () => Int8Array;
-}; } {
+interface EncoderLib {
+  Mp3Encoder: new (channels: number, sampleRate: number, bitRate: number) => {
+    encodeBuffer: (left: Int16Array, right?: Int16Array) => Int8Array;
+    flush: () => Int8Array;
+  };
+}
+
+function loadLamejs(): EncoderLib {
   const lameAllPath = _require.resolve('lamejs/lame.all.js');
   const code = fs.readFileSync(lameAllPath, 'utf8');
-  // lame.all.js wraps everything in `function lamejs() { ... }` and calls
-  // `lamejs()` at the end, exporting via the `lamejs` identifier.
-  // We pass lamejs as a parameter so the function assigns to our object.
-  const lamejs: Record<string, unknown> = {};
+  // lame.all.js declares `function lamejs() { ... }` which hoists in the wrapper
+  // function and becomes the named export. Properties like Mp3Encoder are attached
+  // to this function object. We call with no args; `return lamejs` returns the
+  // hoisted function object.
   // eslint-disable-next-line no-new-func
-  const fn = new Function('lamejs', code + '; return lamejs;');
-  return fn(lamejs) as ReturnType<typeof loadLamejs>;
+  const fn = new Function(code + '\n; return lamejs;') as () => EncoderLib;
+  return fn();
 }
 
 const BIT_RATE = 128;  // kbps
 const CHANNELS = 1;    // mono
 
-let encoderLib: ReturnType<typeof loadLamejs> | null = null;
-let encoder: ReturnType<ReturnType<typeof loadLamejs>['Mp3Encoder']['prototype']['constructor']> | null = null;
+let encoderLib: EncoderLib | null = null;
+let encoder: InstanceType<EncoderLib['Mp3Encoder']> | null = null;
 let outputStream: fs.WriteStream | null = null;
 let paused = false;
 
-function getLib(): ReturnType<typeof loadLamejs> {
+function getLib(): EncoderLib {
   if (!encoderLib) {
     encoderLib = loadLamejs();
   }
