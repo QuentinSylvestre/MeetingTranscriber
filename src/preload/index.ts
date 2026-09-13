@@ -1,13 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
-// Type helper — narrow to known channels
-type InvokeChannel =
-  | 'settings:has-secret'
-  | 'settings:set-secret'
-  | 'settings:test-secret'
-  | 'settings:get-preference'
-  | 'settings:set-preference'
-  | 'app:reload';
+// S7: InvokeChannel is derived from IpcChannels in ipc-types.ts — no manual maintenance.
+import type { InvokeChannel } from '../shared/ipc-types';
 
 export const ipcApi = {
   invoke: (channel: InvokeChannel, ...args: unknown[]): Promise<unknown> =>

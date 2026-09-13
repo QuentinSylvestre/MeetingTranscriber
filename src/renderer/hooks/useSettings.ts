@@ -15,8 +15,9 @@ export function useSettings() {
     return res.present;
   }, []);
 
-  const setSecret = useCallback(async (key: string, value: string): Promise<void> => {
-    await window.electronAPI.invoke('settings:set-secret', { key, value });
+  // S4: Returns structured result so the renderer can surface encryption failures to the user.
+  const setSecret = useCallback(async (key: string, value: string): Promise<{ success: boolean; error?: string }> => {
+    return window.electronAPI.invoke('settings:set-secret', { key, value }) as Promise<{ success: boolean; error?: string }>;
   }, []);
 
   const testSecret = useCallback(async (key: string, provider: ProviderName): Promise<{ valid: boolean; error?: string }> => {

@@ -3,22 +3,27 @@
 // Settings channels
 export interface IpcChannels {
   'settings:has-secret': {
+    // `key` is a secret identifier string (e.g. 'api_key_assemblyai').
     request: { key: string };
     response: { present: boolean };
   };
   'settings:set-secret': {
+    // `key` is a secret identifier string (e.g. 'api_key_assemblyai').
     request: { key: string; value: string };
-    response: void;
+    response: { success: boolean; error?: string };
   };
   'settings:test-secret': {
+    // `key` is a secret identifier string (e.g. 'api_key_assemblyai').
     request: { key: string; provider: ProviderName };
     response: { valid: boolean; error?: string };
   };
   'settings:get-preference': {
+    // `key` is a PreferenceKey enum value (e.g. 'recordingsFolder', 'defaultLanguage').
     request: { key: PreferenceKey };
     response: { value: unknown };
   };
   'settings:set-preference': {
+    // `key` is a PreferenceKey enum value (e.g. 'recordingsFolder', 'defaultLanguage').
     request: { key: PreferenceKey; value: unknown };
     response: void;
   };
@@ -28,6 +33,9 @@ export interface IpcChannels {
     response: void;
   };
 }
+
+// Derived type — always in sync with IpcChannels, no manual maintenance needed.
+export type InvokeChannel = keyof IpcChannels;
 
 export type ProviderName = 'assemblyai' | 'elevenlabs' | 'openai' | 'google';
 

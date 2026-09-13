@@ -25,23 +25,39 @@ export default function SettingsView(): React.ReactElement {
     assemblyai: false, elevenlabs: false, openai: false, google: false,
   });
 
-  // Load configured state on mount
+  // S3: Use Promise.all to avoid discarding promises from forEach(async...).
   useEffect(() => {
-    PROVIDER_NAMES.forEach(async (provider) => {
-      const keyName = SECRET_KEY_NAMES[provider];
-      const configured = await hasSecret(keyName);
-      setKeyStatus(prev => ({
-        ...prev,
-        [provider]: { ...prev[provider], configured },
-      }));
+    Promise.all(
+      PROVIDER_NAMES.map(async (provider) => {
+        const keyName = SECRET_KEY_NAMES[provider];
+        const configured = await hasSecret(keyName);
+        setKeyStatus(prev => ({
+          ...prev,
+          [provider]: { ...prev[provider], configured },
+        }));
+      })
+    ).catch((err) => {
+      console.error('Failed to load key status:', err);
     });
   }, [hasSecret]);
 
+  // S4: Check setSecret result and surface encryption failures to the user.
   const handleSave = async (provider: ProviderName) => {
     const keyName = SECRET_KEY_NAMES[provider];
     const value = keyInputs[provider].trim();
     if (!value) return;
-    await setSecret(keyName, value);
+    const result = await setSecret(keyName, value);
+    if (!result.success) {
+      setKeyStatus(prev => ({
+        ...prev,
+        [provider]: {
+          ...prev[provider],
+          testResult: 'invalid',
+          testError: result.error ?? 'Failed to save key',
+        },
+      }));
+      return;
+    }
     setKeyInputs(prev => ({ ...prev, [provider]: '' }));
     setKeyStatus(prev => ({
       ...prev,
