@@ -149,8 +149,15 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.error(`Job ${jobId} failed:`, errMsg);
-    updateJobStatus(jobId, 'failed', errMsg);
-    sendProgress(`Error: ${errMsg}`);
+    // Translate technical error messages into actionable user-facing messages
+    let userMessage = errMsg;
+    if (errMsg.includes('HTTP 429') || errMsg.includes('429')) {
+      userMessage = 'API quota exceeded — check your account';
+    } else if (errMsg.includes('not configured')) {
+      userMessage = `API key not configured for ${provider} — go to Settings`;
+    }
+    updateJobStatus(jobId, 'failed', userMessage);
+    sendProgress(`Error: ${userMessage}`);
     throw err;
   } finally {
     // Cleanup temp chunk files

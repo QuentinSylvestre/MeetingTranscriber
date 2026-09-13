@@ -4,11 +4,12 @@ import { initLogger } from './logger';
 import { registerAllHandlers } from './ipc/index';
 import { registerAppProtocol } from './ipc/protocol';
 import { closeDb } from './db/index';
+import { registerLifecycleHandlers } from './app-lifecycle';
 
 // Logger declared at module scope but initialized after app is ready (F9)
 let log: ReturnType<typeof initLogger>;
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -31,14 +32,17 @@ function createWindow(): void {
   }
 
   log.info('Application window created');
+  return win;
 }
 
 app.whenReady().then(() => {
   log = initLogger(); // Safe: app is ready, getPath works (F9)
-  registerAllHandlers(); // Register IPC before creating window
+  registerAllHandlers(); // Register IPC before creating window (includes recoverInterruptedJobs)
   registerAppProtocol(); // Register app:// protocol for audio file access (Phase 8)
   log.info('App ready, creating window');
   createWindow();
+  // Wire close guards after window creation so the getter returns the live window
+  registerLifecycleHandlers(() => BrowserWindow.getAllWindows()[0] ?? null);
   // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
