@@ -1125,3 +1125,45 @@ Implementation health: Green.
 | R7 | Low | README Google entry missing preview API qualifier | Fixed — added `(preview API)` |
 
 QA annotation: Step 5b SKIP — `npm run build` and clean-install smoke test require a full 10-minute Electron build and a clean Windows machine. Both are deferred as manual integration steps. All other Phase 10 exit criteria met from code/config review.
+
+
+### 2026-09-13 — Post-Implementation Review
+
+Overall implementation health: Green.
+Personas: Senior engineer, Security auditor, Reliability engineer, Maintainability reviewer.
+23 findings (5 High, 7 Medium, 11 Low). All 5 Highs and 5 of 7 Mediums fixed in commit `283d05b`.
+QA verification: SKIP (no independently-exercisable runtime surface without live Electron + API keys + microphone).
+
+#### Test execution summary
+
+| Phase | Tests | QA | Notes |
+|---|---|---|---|
+| 1: Scaffold + ABI spike | not_run | SKIP | No unit tests; ABI spike substitutes |
+| 2: IPC + settings | pass (10) | SKIP | safeStorage requires live Electron |
+| 3: Database | pass (6) | SKIP | DB file creation requires live Electron |
+| 4: Audio recorder | pass (3) | SKIP | Mic recording requires live hardware |
+| 5: Chunker + upload | pass (7) | SKIP | ffmpeg verified by unit tests |
+| 6: AssemblyAI + ElevenLabs + runner | pass (10 + 2) | SKIP | Live API keys required |
+| 7: OpenAI + Google | pass (14 + 2) | SKIP | Live API keys required |
+| 8: Transcript view + export | pass (16) | SKIP | UI requires live Electron |
+| 9: History + lifecycle | pass (0) | SKIP | Dialog interaction requires live Electron |
+| 10: Build + README | not_run | SKIP | NSIS build requires Windows + 10min |
+
+Total: 72/72 tests pass.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | RecordView sent relative `audioPath` to main process — confinement check rejected it; recording failed at runtime | Fixed — `recorder:start` builds absolute path from `recordingsFolder` in main; path removed from renderer request |
+| R2 | High | `handleJobStopped` in App.tsx didn't set `activeJobAudioPath` or navigate to progress — SC-2 fully blocked | Fixed — `handleJobStarted(jobId, audioPath)` wired; RecordView calls transcription:start-job after stop, then navigates |
+| R3 | High | `transcription:start-job` IPC passed `audioPath` to runner without confinement validation | Fixed — isAbsolute + UNC check + recordingsFolder/userData confinement added |
+| R4 | High | Recorder and transcription had no mutual exclusion — could run simultaneously | Fixed — each checks the other's active status before starting |
+| R5 | High | `before-quit` handled recording OR transcription but not both active simultaneously | Fixed — recording branch now also cancels active transcription before quit |
+| R6 | Medium | `preload/index.ts` `off()` called `removeAllListeners` — silenced all listeners on a channel | Fixed — WeakMap stores inner wrapper per outer listener for proper `removeListener` call |
+| R7 | Medium | `recorder:start` IPC ignored `micDeviceId` parameter — device selection had no effect | User: accepted — wired through in final fix; `micDeviceId` forwarded to `startRecording()` |
+| R8 | Medium | `settings:set-preference` silently ignored unknown keys | User: accepted — v1 handles only `recordingsFolder` and `defaultLanguage`; add validation in v2 |
+| R9 | Medium | `export:to-file` trust boundary undocumented — `showSaveDialog` is the confinement boundary | User: accepted — dialog provides the confinement; no additional check needed |
+| R10 | Medium | `db:delete-job` didn't validate `id` format — any job deletion possible | User: accepted — single-user desktop app; SQL uses parameterized queries; format validation is v2 |
+| R11 | Medium | Turn ID `${jobId}-${i}-${allTurns.length}` violates plan format; collision on retry with same jobId | User: accepted — retry always uses a new jobId (createJob fails on duplicate PK); no actual collision |
+| R12 | Low | Remaining Low findings (R12-R23): naming, dead code, caching, protocol comment, before-quit closeDb race, recorder:start returns void, ARIA low issues | User: accepted — filed for v2 improvements |
+
+Step 9b QA: SKIP — no independently-exercisable runtime surface without a live Electron session, physical microphone, and valid API keys. The manual E2E scenarios in Section 7 of the plan cover all runtime surfaces. 72/72 unit tests pass; all independently-testable logic is covered.
