@@ -1,13 +1,15 @@
-// scripts/rebuild-native.js
-// Rebuilds naudiodon and better-sqlite3 native addons for the installed Electron version.
-// Run via npm postinstall. Using programmatic API to avoid shell quoting issues on Windows.
+// scripts/rebuild-native.cjs
+// Rebuilds better-sqlite3 for the installed Electron version.
+// naudiodon is skipped — it has no prebuilt for Electron 36 and native build
+// requires Windows SDK 10.0.26100.0 which is not present on this machine.
+// Run via npm postinstall.
 const { rebuild } = require('@electron/rebuild');
 const path = require('path');
 
 rebuild({
   buildPath: path.resolve(__dirname, '..'),
   electronVersion: require('electron/package.json').version,
-  onlyModules: ['naudiodon', 'better-sqlite3'],
+  onlyModules: ['better-sqlite3'],
   force: true,
 }).then(() => {
   console.log('Native addons rebuilt successfully.');

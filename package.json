@@ -7,7 +7,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/rebuild-native.cjs && vite",
     "build": "tsc --noEmit && electron-builder",
     "preview": "electron .",
     "test": "npm rebuild better-sqlite3 --prefer-offline && vitest run",
