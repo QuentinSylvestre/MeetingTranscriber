@@ -773,9 +773,12 @@ Phase 8 delivers transcript view, audio player, app:// protocol, and export. `re
 - [ ] History lists jobs in reverse chronological order; clicking a completed job opens transcript.
 - [ ] Closing mid-recording shows save/discard dialog; Save produces valid MP3.
 - [ ] Closing mid-transcription shows cancel/wait dialog; Cancel sets job to `failed`.
-- [ ] On startup after mid-job crash: interrupted jobs shown as `failed` with "Interrupted by app close" message.
+- [x] On startup after mid-job crash: interrupted jobs shown as `failed` with "Interrupted by app close" message.
 - [ ] Uncaught renderer exception shows ErrorBoundary screen.
-- [ ] All four providers show actionable error message when key missing or quota exceeded.
+- [x] All four providers show actionable error message when key missing or quota exceeded.
+
+**Implementation (2026-09-13, code: 3426112 + fix: 65cb1d8)**
+Phase 9 delivers history view, error boundary, app-close guards, and startup crash recovery. `before-quit` handler intercepts active recording (Stop&Save/Discard/Cancel) and active transcription (Cancel&Quit/Wait) using Electron dialogs. `_quitInProgress` flag prevents re-entry when `app.quit()` triggers a second `before-quit`. `recoverInterruptedJobs()` marks `uploading`/`transcribing` jobs as `failed` on startup. `ErrorBoundary` catches render exceptions; error message sanitized for production. `HistoryView` shows jobs grouped by status; Delete disabled for active jobs. `useHistory` and `useTranscript` both surface load errors. `runner.ts` maps HTTP 429 → actionable error messages. 72 tests pass.
 
 ---
 
@@ -1086,3 +1089,19 @@ Implementation health: Green.
 | R8 | Low | `getPreference('recordingsFolder')` called on every protocol request — confirmed memory-cached; no disk I/O per request | User: accepted — confirmed OK from store.ts |
 
 QA annotation: Step 5b SKIP — transcript view, audio player, speaker renaming, and export all require live Electron with a completed transcription job. Unit tests (72/72) cover protocol confinement, formatTime, app:// URL construction, export format, and clipboard guard.
+
+### 2026-09-13 — Implementation Review (after Phase 9, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+6 findings (1 High, 2 Medium, 3 Low). All fixed.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `before-quit` handler called `app.quit()` from inside async dialog callback — `before-quit` fired again, handler re-entered, infinite dialog loop possible | Fixed — `_quitInProgress` flag prevents re-entry |
+| R2 | Medium | `db:delete-job` IPC accepted deletion of in-progress jobs — `runner.ts` would call `updateJobStatus` on a deleted row and `saveTranscript` would insert orphaned FK rows | Fixed — main process throws for active jobs; renderer disables Delete button for uploading/transcribing jobs |
+| R3 | Medium | `app:reload` bypasses `before-quit` guards for active recording/transcription | User: accepted — ErrorBoundary is shown on catastrophic render failures; at that point the UI is already unusable and stopping recording/transcription gracefully is unreliable anyway |
+| R4 | Low | `ErrorBoundary` rendered raw `error.message` containing internal paths | Fixed — generic message in production; raw message in development mode only |
+| R5 | Low | `useHistory` had no error state — load failures showed "No jobs yet" | Fixed — `error` state added; `HistoryView` shows error message |
+| R6 | Low | `closeDb()` race with active IPC on `app.exit(0)` from reload | User: accepted — `app.exit(0)` abruptly terminates the process; better-sqlite3 WAL mode is crash-safe and will recover on next launch |
+
+QA annotation: Step 5b SKIP — close guards, history navigation, and error boundary all require live Electron interaction. Unit tests (72/72) pass.
