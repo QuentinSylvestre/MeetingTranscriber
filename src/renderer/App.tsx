@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SettingsView from './views/SettingsView';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
@@ -52,9 +53,11 @@ export default function App(): React.ReactElement {
       {/* Main content */}
       <main style={{ flex: 1, padding: 24, background: '#1e1e2e', color: '#cdd6f4' }}>
         <h2 style={{ marginTop: 0 }}>{currentView.charAt(0).toUpperCase() + currentView.slice(1)}</h2>
-        <p style={{ color: '#585b70' }}>
-          Phase 1 scaffold — content coming in phases 2–9.
-        </p>
+        {currentView === 'settings' ? <SettingsView /> : (
+          <p style={{ color: '#585b70' }}>
+            Phase 1 scaffold — content coming in phases 2–9.
+          </p>
+        )}
       </main>
     </div>
   );
