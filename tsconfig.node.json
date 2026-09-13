@@ -5,7 +5,7 @@
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
-    "outDir": "dist-main",
+    "outDir": "dist-electron",
     "rootDir": "src"
   },
   "include": ["src/main/**/*", "src/preload/**/*"]
