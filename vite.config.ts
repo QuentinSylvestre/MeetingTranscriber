@@ -8,15 +8,6 @@ export default defineConfig({
     electron({
       main: {
         entry: ['src/main/index.ts', 'src/main/recorder/encoder.ts'],
-        vite: {
-          build: {
-            rollupOptions: {
-              output: {
-                format: 'cjs',
-              },
-            },
-          },
-        },
       },
       preload: {
         input: 'src/preload/index.ts',
