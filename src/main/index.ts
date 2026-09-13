@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { initLogger } from './logger';
+import { registerAllHandlers } from './ipc/index';
 
 // Logger declared at module scope but initialized after app is ready (F9)
 let log: ReturnType<typeof initLogger>;
@@ -32,6 +33,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   log = initLogger(); // Safe: app is ready, getPath works (F9)
+  registerAllHandlers(); // Register IPC before creating window
   log.info('App ready, creating window');
   createWindow();
   // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
