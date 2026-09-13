@@ -56,7 +56,17 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         fileName: selected.name,
       }) as string;
 
-      await window.electronAPI.invoke('transcription:start-job', {
+      // Navigate to progress view BEFORE starting the job so JobProgressView
+      // is mounted and its transcription:progress listener is registered before
+      // the runner fires any events. Yield with setTimeout(0) to let React flush
+      // the navigation re-render before the runner sends its first progress event.
+      onJobQueued?.(jobId, destPath);
+      // Wait for React to flush the navigation re-render and JobProgressView to mount
+      // its transcription:progress listener before the runner starts firing events.
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+      // Fire and forget — errors are surfaced via transcription:progress 'Error:' event
+      void window.electronAPI.invoke('transcription:start-job', {
         jobId,
         title: title.trim() || selected.name.replace(/\.[^.]+$/, ''),
         audioPath: destPath,
@@ -64,7 +74,6 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         model: 'default',
         language,
       });
-      onJobQueued?.(jobId, destPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSubmitting(false);
