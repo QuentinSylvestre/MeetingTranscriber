@@ -1,8 +1,20 @@
 # Meeting Transcriber Electron App
 
 > **Date**: 2026-09-13
-> **Status**: In Progress  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
-> **Last Updated**: <set by /qclose at archival>
+> **Status**: In Progress — implementation complete; manual integration tests (live API keys), installer smoke test, and Vite/Electron build debugging pending
+> **Last Updated**: 2026-09-13 21:45
+
+## Completion Summary
+
+All 10 implementation phases complete. 72/72 unit tests pass. The app launches in dev mode (after the post-plan Vite build fixes below). Manual integration tests with live API keys, the NSIS installer smoke test, and WASAPI loopback remain as v2 work.
+
+### Acknowledged at archival
+
+- Skipped (harness opportunity): `/qexplore` one-question-at-a-time enforcement hook — cost unclear, user skipped.
+- Skipped (harness opportunity): `[QA]` annotation guidance for scaffold-only phases — user skipped.
+- Accepted: `src/main/logger.ts:11` TODO comment — `upgrade to multi-archive via archiveLog when log volume warrants it` — cosmetic; deferred to v2.
+- Accepted: 6 post-plan build fixes made during live testing (not in plan divergences table): removed `"type": "module"` from `package.json` (ESM/CJS main process conflict), `rolldownOptions.external` for native module externalization (Vite 8 rolldown), preload output renamed to `preload.js` (collision with main `index.js`), M4A MIME type fix in provider adapters, `rebuild-native.cjs` now skips naudiodon, `dev` script rebuilds better-sqlite3 before launching.
+- Accepted: Plan implementation notes mention `"type": "module"` as a requirement (Phase 1 divergences); this was subsequently removed to fix ESM output. Stale reference in plan only — no external docs affected.
 > **Scope**: Windows-only Electron app for recording and transcribing meetings with speaker diarization via multiple cloud providers
 > **Estimated effort**: 6–9 weeks (solo developer)
 
