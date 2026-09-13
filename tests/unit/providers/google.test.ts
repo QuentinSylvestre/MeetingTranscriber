@@ -117,7 +117,7 @@ describe('GoogleProvider', () => {
     ).rejects.toThrow('Google Gemini transcription failed: HTTP 403');
   });
 
-  it('handles malformed JSON in response by returning empty turns', async () => {
+  it('throws when model returns malformed JSON (non-JSON response)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -128,15 +128,16 @@ describe('GoogleProvider', () => {
       text: async () => '',
     });
 
-    const results = await provider.transcribeFile(
-      '/fake/audio.mp3',
-      { language: 'en', diarize: true },
-      () => {},
-      new AbortController().signal
-    );
-
-    // Malformed JSON falls back to empty utterances
-    expect(results[0].turns).toHaveLength(0);
+    // Malformed JSON now throws — responseMimeType:'application/json' instructs Gemini
+    // to return JSON; if it doesn't, something went wrong and the error propagates.
+    await expect(
+      provider.transcribeFile(
+        '/fake/audio.mp3',
+        { language: 'en', diarize: true },
+        () => {},
+        new AbortController().signal
+      )
+    ).rejects.toThrow('Google: model returned unparseable response. Fragment:');
   });
 
   it('handles missing candidates in response', async () => {

@@ -17,6 +17,9 @@ export function getProvider(providerName: ProviderName): TranscriptionProvider {
     case 'elevenlabs': return new ElevenLabsProvider(apiKey);
     case 'openai': return new OpenAIProvider(apiKey);
     case 'google': return new GoogleProvider(apiKey);
-    default: throw new Error(`Provider not implemented: ${providerName}`);
+    default: {
+      const _: never = providerName;
+      throw new Error(`Provider not implemented: ${providerName}`);
+    }
   }
 }

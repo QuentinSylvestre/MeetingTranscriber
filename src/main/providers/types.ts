@@ -11,6 +11,12 @@ export interface SpeakerTurn {
 }
 
 export interface TranscriptChunkResult {
+  /**
+   * Always 0: the adapter processes one audio file at a time.
+   * The runner assigns the real chunk index via the loop variable i,
+   * not from this field. The chunkIndex here is reserved for future
+   * adapters that might return multiple result groups per file.
+   */
   chunkIndex: number;
   turns: SpeakerTurn[];
 }

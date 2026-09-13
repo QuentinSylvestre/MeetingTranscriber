@@ -75,9 +75,16 @@ export class GoogleProvider implements TranscriptionProvider {
     let parsed: { utterances?: Array<{ speaker: string; start: number; end: number; text: string }> };
     try {
       parsed = JSON.parse(textContent);
-    } catch {
-      log.error('Google: failed to parse response JSON:', textContent.slice(0, 500));
-      parsed = { utterances: [] };
+    } catch (parseErr) {
+      // Model returned non-JSON (possible refusal or unexpected format).
+      // responseMimeType: 'application/json' instructs Gemini to return JSON;
+      // if it doesn't, something went wrong — treat as a hard error.
+      throw new Error(`Google: model returned unparseable response. Fragment: ${textContent.slice(0, 200)}`);
+    }
+
+    if (!parsed.utterances || parsed.utterances.length === 0) {
+      log.warn('Google: model returned zero utterances (silent recording or model issue)');
+      // Don't throw — the audio may be genuinely silent. Return empty results.
     }
 
     onProgress('Complete');
@@ -122,7 +129,8 @@ export class GoogleProvider implements TranscriptionProvider {
     const uploadUrl = initiateResp.headers.get('x-goog-upload-url');
     if (!uploadUrl) throw new Error('Google File API: no upload URL in response');
 
-    // Upload the file data
+    // The resumable upload URL is pre-authenticated by the initiate step;
+    // no Authorization or api-key header is needed for the upload PUT/POST.
     const uploadResp = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
