@@ -29,8 +29,13 @@ export class OpenAIProvider implements TranscriptionProvider {
       log.warn(`OpenAI: chunk ${filename} is ${fileSizeMb} MB (soft limit 20 MB)`);
     }
 
+    const ext = path.extname(filename).toLowerCase();
+    const mimeType: Record<string, string> = {
+      '.mp3': 'audio/mpeg', '.mp4': 'audio/mp4', '.m4a': 'audio/mp4',
+      '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+    };
     const formData = new FormData();
-    formData.append('file', new Blob([fileBuffer], { type: 'audio/mpeg' }), filename);
+    formData.append('file', new Blob([fileBuffer], { type: mimeType[ext] ?? 'audio/mpeg' }), filename);
     formData.append('model', MODEL);
     formData.append('response_format', 'verbose_json');
     if (options.language !== 'auto') formData.append('language', options.language);

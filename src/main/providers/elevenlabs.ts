@@ -19,8 +19,13 @@ export class ElevenLabsProvider implements TranscriptionProvider {
     const fileBuffer = fs.readFileSync(filePath);
     const filename = path.basename(filePath);
 
+    const ext = path.extname(filename).toLowerCase();
+    const mimeType: Record<string, string> = {
+      '.mp3': 'audio/mpeg', '.mp4': 'audio/mp4', '.m4a': 'audio/mp4',
+      '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+    };
     const formData = new FormData();
-    formData.append('file', new Blob([fileBuffer], { type: 'audio/mpeg' }), filename);
+    formData.append('file', new Blob([fileBuffer], { type: mimeType[ext] ?? 'audio/mpeg' }), filename);
     formData.append('model_id', 'scribe_v2');
     if (options.diarize) formData.append('diarization', 'true');
     if (options.language !== 'auto') formData.append('language_code', options.language);
