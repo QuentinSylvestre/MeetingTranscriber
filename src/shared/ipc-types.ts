@@ -111,7 +111,9 @@ export interface IpcChannels {
 
   // Recorder channels (Phase 4)
   'recorder:start': {
-    request: { jobId: string; audioPath: string; micDeviceId?: string; enableLoopback: boolean };
+    // audioPath is now built in the main process from recordingsFolder + jobId.
+    // The renderer only needs to pass jobId and optional micDeviceId.
+    request: { jobId: string; micDeviceId?: string; enableLoopback?: boolean };
     response: void;
   };
   'recorder:pause': {
@@ -124,7 +126,8 @@ export interface IpcChannels {
   };
   'recorder:stop': {
     request: void;
-    response: void;
+    // Returns the absolute audioPath so the renderer can hand it to transcription:start-job.
+    response: { audioPath: string | null };
   };
   'recorder:get-devices': {
     request: void;

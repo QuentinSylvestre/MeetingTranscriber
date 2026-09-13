@@ -16,10 +16,12 @@ export default function App(): React.ReactElement {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobAudioPath, setActiveJobAudioPath] = useState<string | null>(null);
 
-  // Called by RecordView when recording has been stopped and MP3 flushed to disk.
-  const handleJobStopped = (jobId: string): void => {
+  // Called by RecordView when a recording has been stopped, flushed, and a
+  // transcription job has been queued. Navigate straight to progress.
+  const handleJobStarted = (jobId: string, audioPath: string): void => {
     setActiveJobId(jobId);
-    // Phase 9 will navigate to progress view and supply the real audio path.
+    setActiveJobAudioPath(audioPath);
+    setCurrentView('progress');
   };
 
   const handleOpenJob = (job: Job): void => {
@@ -53,7 +55,7 @@ export default function App(): React.ReactElement {
               setCurrentView('progress');
             }} />
           ) : currentView === 'record' ? (
-            <RecordView onJobStopped={handleJobStopped} />
+          <RecordView onJobStarted={handleJobStarted} />
           ) : currentView === 'history' ? (
             <HistoryView onOpenJob={handleOpenJob} />
           ) : (

@@ -247,3 +247,8 @@ export function getRecordingDurationMs(): number {
 export function getStatus(): RecorderStatus {
   return state.status;
 }
+
+/** Returns the audio file path for the current or most-recent recording session. */
+export function getAudioPath(): string | null {
+  return state.audioPath;
+}

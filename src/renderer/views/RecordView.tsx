@@ -3,22 +3,26 @@
  *
  * Features:
  *   - Microphone device selector (enumerateDevices)
+ *   - Provider and language selectors (mirrors UploadView)
  *   - Record / Pause / Resume / Stop controls
  *   - Live recording duration display (HH:MM:SS)
+ *   - On Stop: calls transcription:start-job with the recorded file, then
+ *     navigates to the Progress view via onJobStarted callback (SC-2).
  *   - Loopback toggle permanently disabled (naudiodon FAIL, v1)
  *   - Error display
- *
- * Audio path: Phase 4 uses a timestamped temp filename in the browser's
- * standard app data path. Phase 9 will wire up the preferences store
- * (recordingsFolder setting) and replace the hardcoded path.
  */
 
 import React, { useState, useEffect } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
+import { PROVIDER_NAMES, PROVIDER_LABELS } from '../../shared/ipc-types';
+import type { ProviderName } from '../../shared/ipc-types';
 
 interface RecordViewProps {
-  /** Called when a recording has been stopped and the MP3 flushed to disk. */
-  onJobStopped?: (jobId: string) => void;
+  /**
+   * Called when recording has been stopped, the MP3 flushed to disk, and a
+   * transcription job has been queued. Navigates the shell to 'progress'.
+   */
+  onJobStarted?: (jobId: string, audioPath: string) => void;
 }
 
 function formatDuration(ms: number): string {
@@ -33,12 +37,20 @@ function formatDuration(ms: number): string {
   ].join(':');
 }
 
-export default function RecordView({ onJobStopped }: RecordViewProps): React.ReactElement {
+export default function RecordView({ onJobStarted }: RecordViewProps): React.ReactElement {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [selectedProvider, setSelectedProvider] = useState<ProviderName>('assemblyai');
+  const [selectedLanguage, setSelectedLanguage] = useState<'fr' | 'en' | 'auto'>('auto');
+
+  // jobIdRef is used across start and stop; keep in component state so it
+  // survives the async stop sequence.
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const { status, durationMs, error, start, pause, resume, stop } = useRecorder(
-    (jobId) => onJobStopped?.(jobId)
+    // onStopped fires after the encoder flushed; the real navigation happens in
+    // handleStop after we get the audioPath and queue the transcription job.
+    (_jobId) => { /* handled in handleStop */ }
   );
 
   // Enumerate audio input devices on mount and after permissions may have changed.
@@ -50,17 +62,43 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
         .catch(() => {});
     };
     enumerate();
-    // Re-enumerate when devices change (plug/unplug).
     navigator.mediaDevices.addEventListener('devicechange', enumerate);
     return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate);
   }, []);
 
   const handleStart = async (): Promise<void> => {
     const jobId = `job-${Date.now()}`;
-    // Phase 4: use a timestamped filename in the current working directory.
-    // Phase 9 will resolve this via the recordingsFolder preference.
-    const audioPath = `recording-${jobId}.mp3`;
-    await start(jobId, audioPath, selectedDevice || undefined);
+    setCurrentJobId(jobId);
+    // audioPath is now built in the main process — renderer only passes jobId.
+    await start(jobId, selectedDevice || undefined);
+  };
+
+  const handleStop = async (): Promise<void> => {
+    // stop() flushes the encoder and returns the absolute audioPath from main.
+    const { audioPath } = await stop();
+    const jobId = currentJobId;
+    setCurrentJobId(null);
+
+    if (!jobId || !audioPath) return;
+
+    try {
+      // Queue the transcription job immediately after the recording is flushed.
+      await window.electronAPI.invoke('transcription:start-job', {
+        jobId,
+        title: `Recording ${new Date().toLocaleString()}`,
+        audioPath,
+        provider: selectedProvider,
+        model: 'universal',
+        language: selectedLanguage,
+      });
+      // Navigate the shell to the progress view.
+      onJobStarted?.(jobId, audioPath);
+    } catch (err) {
+      // Transcription job start failed — the recording was saved but the job
+      // didn't queue. The error will surface in the view via the error state
+      // of the surrounding shell or via the useRecorder error.
+      console.error('Failed to start transcription job after recording:', err);
+    }
   };
 
   // Shared button style (Catppuccin Mocha palette).
@@ -88,8 +126,9 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
     padding: '6px 10px',
     borderRadius: 4,
     fontSize: 13,
-    minWidth: 260,
   };
+
+  const isIdle = status === 'idle';
 
   return (
     <div style={{ color: '#cdd6f4' }}>
@@ -103,8 +142,9 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
         <select
           value={selectedDevice}
           onChange={(e) => setSelectedDevice(e.target.value)}
-          style={selectStyle}
-          disabled={status !== 'idle'}
+          style={{ ...selectStyle, minWidth: 260 }}
+          disabled={!isIdle}
+          aria-label="Microphone device"
         >
           <option value="">Default microphone</option>
           {devices.map((d) => (
@@ -113,6 +153,42 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Provider and language selectors — disabled while recording */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: '#a6adc8' }}>
+            Provider
+          </label>
+          <select
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value as ProviderName)}
+            style={selectStyle}
+            disabled={!isIdle}
+            aria-label="Transcription provider"
+          >
+            {PROVIDER_NAMES.map((p) => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 13, marginBottom: 4, color: '#a6adc8' }}>
+            Language
+          </label>
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value as 'fr' | 'en' | 'auto')}
+            style={selectStyle}
+            disabled={!isIdle}
+            aria-label="Language"
+          >
+            <option value="auto">Auto-detect</option>
+            <option value="fr">French</option>
+            <option value="en">English</option>
+          </select>
+        </div>
       </div>
 
       {/* Loopback toggle — disabled (naudiodon FAIL) */}
@@ -139,7 +215,6 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
               borderRadius: '50%',
               marginLeft: 12,
               verticalAlign: 'middle',
-              animation: 'none',
             }}
             title="Recording"
           />
@@ -169,14 +244,14 @@ export default function RecordView({ onJobStopped }: RecordViewProps): React.Rea
         {status === 'recording' && (
           <>
             <button style={btn.pause} onClick={pause}>⏸ Pause</button>
-            <button style={btn.stop} onClick={stop}>■ Stop</button>
+            <button style={btn.stop} onClick={handleStop}>■ Stop</button>
           </>
         )}
 
         {status === 'paused' && (
           <>
             <button style={btn.resume} onClick={resume}>▶ Resume</button>
-            <button style={btn.stop} onClick={stop}>■ Stop</button>
+            <button style={btn.stop} onClick={handleStop}>■ Stop</button>
           </>
         )}
 

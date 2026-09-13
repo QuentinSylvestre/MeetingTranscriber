@@ -36,10 +36,10 @@ export function useRecorder(onStopped: (jobId: string) => void): {
   status: RecordingStatus;
   durationMs: number;
   error: string | null;
-  start: (jobId: string, audioPath: string, micDeviceId?: string) => Promise<void>;
+  start: (jobId: string, micDeviceId?: string) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  stop: () => Promise<void>;
+  stop: () => Promise<{ audioPath: string | null }>;
 } {
   const [status, setStatus] = useState<RecordingStatus>('idle');
   const [durationMs, setDurationMs] = useState(0);
@@ -72,7 +72,6 @@ export function useRecorder(onStopped: (jobId: string) => void): {
 
   const start = useCallback(async (
     jobId: string,
-    audioPath: string,
     micDeviceId?: string
   ): Promise<void> => {
     setError(null);
@@ -121,7 +120,7 @@ export function useRecorder(onStopped: (jobId: string) => void): {
       // Do NOT connect workletNode to destination — we don't want mic monitoring.
 
       // --- 4. Start recording in main process ---
-      await window.electronAPI.invoke('recorder:start', { jobId, audioPath, enableLoopback: false });
+      await window.electronAPI.invoke('recorder:start', { jobId, micDeviceId, enableLoopback: false });
 
       jobIdRef.current = jobId;
       isPausedRef.current = false;
@@ -151,7 +150,7 @@ export function useRecorder(onStopped: (jobId: string) => void): {
     setStatus('recording');
   }, []);
 
-  const stop = useCallback(async (): Promise<void> => {
+  const stop = useCallback(async (): Promise<{ audioPath: string | null }> => {
     setStatus('stopping');
     isPausedRef.current = false;
 
@@ -164,13 +163,15 @@ export function useRecorder(onStopped: (jobId: string) => void): {
     audioContextRef.current = null;
 
     // Tell main process to flush the encoder and close the file.
-    await window.electronAPI.invoke('recorder:stop');
+    // Main returns { audioPath } so the renderer can pass it to transcription:start-job.
+    const result = await window.electronAPI.invoke('recorder:stop') as { audioPath: string | null };
 
     const jid = jobIdRef.current;
     jobIdRef.current = null;
     setStatus('idle');
     setDurationMs(0);
     if (jid) onStopped(jid);
+    return { audioPath: result?.audioPath ?? null };
   }, [onStopped]);
 
   return { status, durationMs, error, start, pause, resume, stop };

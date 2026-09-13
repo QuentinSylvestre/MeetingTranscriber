@@ -13,14 +13,24 @@
  *                          (wired inside recorder/index.ts startRecording)
  */
 
+import * as path from 'path';
 import { ipcMain } from 'electron';
 import * as recorder from '../recorder/index';
+import { getActiveJobId as getTranscriptionActiveJobId } from '../transcription/runner';
+import { getPreference } from '../settings/store';
 import log from 'electron-log';
 
 export function registerRecorderHandlers(): void {
   ipcMain.handle(
     'recorder:start',
-    async (_event, { jobId, audioPath }: { jobId: string; audioPath: string }) => {
+    async (_event, { jobId, micDeviceId }: { jobId: string; micDeviceId?: string; enableLoopback?: boolean }) => {
+      // F1 Reliability: mutual exclusion — reject if a transcription job is active.
+      if (getTranscriptionActiveJobId() !== null) {
+        throw new Error('Cannot start recording while a transcription job is active');
+      }
+      // Build absolute audioPath in main process (F1/F2/F5: renderer must not supply path).
+      const recordingsFolder = getPreference('recordingsFolder');
+      const audioPath = path.join(recordingsFolder, `${jobId}.mp3`);
       recorder.startRecording(jobId, audioPath);
     }
   );
@@ -35,7 +45,10 @@ export function registerRecorderHandlers(): void {
 
   ipcMain.handle('recorder:stop', async () => {
     try {
+      const audioPath = recorder.getAudioPath();
       await recorder.stopRecording();
+      // Return the audioPath so the renderer can pass it to transcription:start-job.
+      return { audioPath };
     } catch (err) {
       log.error('Error stopping recording:', err);
       throw err;

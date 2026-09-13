@@ -33,14 +33,19 @@ export function registerLifecycleHandlers(getMainWindow: () => BrowserWindow | n
       if (response.response === 0) {
         // Stop & Save
         try { await stopRecording(); } catch (err) { log.error('Error stopping recording on quit:', err); }
-        _quitInProgress = true;
-        app.quit();
       } else if (response.response === 1) {
         // Discard — just quit
-        _quitInProgress = true;
-        app.quit();
+      } else {
+        // Cancel: do nothing, app stays open
+        return;
       }
-      // response 2 = Cancel: do nothing, app stays open
+      // After handling the recording (saved or discarded), also cancel any active transcription.
+      if (getActiveJobId() !== null) {
+        cancelJob();
+        await new Promise(r => setTimeout(r, 500));
+      }
+      _quitInProgress = true;
+      app.quit();
       return;
     }
 
