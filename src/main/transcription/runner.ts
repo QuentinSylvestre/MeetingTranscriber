@@ -94,6 +94,12 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
     const allTurns: TranscriptTurn[] = [];
     const chunkDurationMs = chunkResult.chunkDurationMs;
 
+    // Multi-chunk jobs (openai, google) need chunk-prefixed speaker labels so
+    // that Speaker 0 from chunk 0 and Speaker 0 from chunk 1 are distinct keys
+    // in speaker_mappings. Single-chunk providers (assemblyai, elevenlabs) skip
+    // the prefix to keep labels clean.
+    const needsChunkPrefix = chunkResult.paths.length > 1;
+
     for (let i = 0; i < chunkResult.paths.length; i++) {
       if (signal.aborted) break;
       const chunkPath = chunkResult.paths[i];
@@ -110,11 +116,16 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
       const offsetMs = chunkDurationMs === Infinity ? 0 : i * chunkDurationMs;
       for (const cr of chunkResults) {
         for (const turn of cr.turns) {
+          // Apply 'Chunk N \u2013 ' prefix (EN-DASH) for multi-chunk providers so that
+          // speaker_mappings keys are globally unique across chunks.
+          const speakerLabel = needsChunkPrefix
+            ? `Chunk ${i} \u2013 ${turn.speakerLabel}`
+            : turn.speakerLabel;
           allTurns.push({
             id: `${jobId}-${i}-${allTurns.length}`, // Format: jobId-chunkIndex-turnIndex
             job_id: jobId,
             chunk_index: i,
-            speaker_label: turn.speakerLabel,
+            speaker_label: speakerLabel,
             start_ms: turn.startMs + offsetMs,
             end_ms: turn.endMs + offsetMs,
             text: turn.text,

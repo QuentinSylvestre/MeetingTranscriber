@@ -1,5 +1,7 @@
 import { AssemblyAIProvider } from './assemblyai';
 import { ElevenLabsProvider } from './elevenlabs';
+import { OpenAIProvider } from './openai';
+import { GoogleProvider } from './google';
 import { getSecretPlaintext } from '../settings/store';
 import { SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { TranscriptionProvider } from './types';
@@ -13,7 +15,8 @@ export function getProvider(providerName: ProviderName): TranscriptionProvider {
   switch (providerName) {
     case 'assemblyai': return new AssemblyAIProvider(apiKey);
     case 'elevenlabs': return new ElevenLabsProvider(apiKey);
-    // Phase 7 will add openai and google
+    case 'openai': return new OpenAIProvider(apiKey);
+    case 'google': return new GoogleProvider(apiKey);
     default: throw new Error(`Provider not implemented: ${providerName}`);
   }
 }
