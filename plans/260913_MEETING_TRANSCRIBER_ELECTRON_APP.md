@@ -263,12 +263,15 @@ Phase 1 establishes the complete project scaffold for the Meeting Transcriber El
 > **Rejected:** `settings:get-secret` IPC channel returning plaintext API key to renderer — security exposure; renderer process should never hold decrypted credentials. **Use instead:** `settings:has-secret` (boolean) + `settings:test-secret` (validation result); main process uses keys directly for all HTTP calls.
 
 **Exit criteria**:
-- [ ] Settings view renders with 4 API key fields showing masked placeholders when configured, and test buttons.
+- [x] Settings view renders with 4 API key fields showing masked placeholders when configured, and test buttons.
 - [ ] Entering and saving an API key persists it encrypted; reopening the app shows the field with masked placeholder.
 - [ ] Test button calls provider's validation endpoint and shows "Valid" or error message — does not reveal the key.
-- [ ] `tests/unit/settings.test.ts` passes: safeStorage round-trip, `hasSecret` returns false when absent, `testSecret` calls correct endpoint.
+- [x] `tests/unit/settings.test.ts` passes: safeStorage round-trip, `hasSecret` returns false when absent, `testSecret` calls correct endpoint.
 - [ ] DevTools console confirms no `window.require`, no `window.process`, no `window.__secrets`.
-- [ ] Grep `src/main/ipc/settings.ts` for `get-secret` returns no IPC handler definition.
+- [x] Grep `src/main/ipc/settings.ts` for `get-secret` returns no IPC handler definition.
+
+**Implementation (2026-09-13, code: 93a8ea4 + c55f979 + fix: 014b390)**
+Phase 2 delivers the typed IPC bridge and settings store. `src/shared/ipc-types.ts` is the single source of truth for all channel names; `InvokeChannel = keyof IpcChannels` keeps preload in sync automatically. `store.ts` implements safeStorage-backed secrets (DPAPI on Windows, hex-encoded in `userData/secrets.json`), JSON preferences with defaults, and `testSecret` with 10s timeouts. Security invariant: `settings:get-secret` handler intentionally absent; renderer never receives plaintext keys. `setSecret` returns `{ success, error? }` so encryption-unavailable degrades visibly. Review cycle fixed 13 findings (7 High): Google API key moved from URL query param to `x-goog-api-key` header; prototype-pollution guard (`assertValidSecretKey`) added to all key-indexed paths; `forEach(async)` → `Promise.all`; atomic `writeSecrets` via `.tmp`+rename; fetch timeouts (10s); `value as never` cast replaced with runtime validation; `ipcMain.handle` double-registration guard. 10/10 tests pass.
 
 ---
 
@@ -842,6 +845,7 @@ The protocol supports HTTP range requests by delegating to `protocol.registerFil
 | 1 | `.gitignore` extended to include `dist-electron/` | `vite-plugin-electron` outputs to `dist-electron/` which was not covered by the original `dist/` entry. |
 | 1 | `electron-builder.yml` `files` array: `node_modules/**/*` removed; `dist-main/**/*` replaced with `dist-electron/**/*` | Review finding: bundling `node_modules` produces unusable 500 MB+ installer; dist path must match vite-plugin-electron output. |
 | 1 | `tsconfig.node.json` gained `rootDir: "src"`, `outDir` updated to `dist-electron`, `scripts/**/*` removed from `include` | Review finding: missing `rootDir` caused unpredictable TypeScript output paths; `scripts/` should not be compiled into the main process bundle. |
+| 2 | `store.ts` uses top-level `import { safeStorage } from 'electron'` instead of `require('electron')` inside each function body | `vi.mock('electron')` in Vitest only intercepts ESM static imports, not `require()` inside function bodies. The plan noted the `require()` form as acceptable if circular import is not a concern; in practice the static import is required for test isolation. |
 
 ## Follow-up Work (Deferred)
 
@@ -912,3 +916,33 @@ Implementation health: Green.
 | R17 | Low | `tsconfig.node.json outDir: dist-main` inconsistent with `dist-electron` in builder (cycle-2 finding) | Fixed — `outDir` aligned to `dist-electron` in commit a6445da |
 
 QA annotation: Step 5b SKIP — Electron window launch verified by implementation spike during Phase 1; no independently-automatable surface for a scaffold-only phase. This is an annotation mismatch: future plan revisions should omit `[QA]` from pure scaffold phases.
+
+### 2026-09-13 — Implementation Review (after Phase 2, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+20 findings across 2 review cycles (7 High, 6 Medium, 7 Low cycle-1; cycle-2 clean with no new findings).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | Google `testSecret` uses `?key=<plaintext>` URL query param — key logged by Google servers, proxies, Electron net-log | Fixed — changed to `x-goog-api-key` request header |
+| R2 | High | `ipcMain.handle` called unconditionally in `registerAllHandlers` — double-registration crash on hot reload | Fixed — `handlersRegistered` guard flag in `ipc/index.ts` |
+| R3 | High | `SettingsView.tsx` `useEffect` uses `forEach(async ...)` — all four IPC call promises silently discarded | Fixed — replaced with `Promise.all(...).catch(...)` |
+| R4 | High | `setSecret` returns void when safeStorage unavailable — user receives false confirmation, key is gone on next launch | Fixed — returns `{ success, error? }`; IPC handler, hook, and UI all propagate the failure |
+| R5 | High | `testSecret` `fetch()` has no timeout — hung provider endpoint holds IPC call open indefinitely | Fixed — `AbortSignal.timeout(10_000)` on all four provider fetch calls |
+| R6 | High | `set-preference` handler uses `value as never` — type erasure; any renderer-supplied value reaches store without validation | Fixed — runtime type validation per preference key before calling store |
+| R7 | High | `InvokeChannel` in preload is a manually-duplicated union literal — no compiler gate on new channel additions | Fixed — `InvokeChannel = keyof IpcChannels` in `ipc-types.ts`; preload imports from there |
+| R8 | Medium | Prototype pollution: `key` from renderer indexes plain `JSON.parse` object in `hasSecret`/`setSecret`/`testSecret` | Fixed — `assertValidSecretKey` validates against `VALID_SECRET_KEYS` allowlist on all key-indexed paths |
+| R9 | Medium | Preload relay accepts any string at runtime — no allowlist (compile-time only enforcement) | User: accepted — main-process handler registry is the actual gate; acceptable for a desktop Electron app with `contextIsolation: true` |
+| R10 | Medium | Missing test: `testSecret` doesn't verify correct endpoint URL or headers | Fixed — two new tests added (assemblyai endpoint, google x-goog-api-key header) |
+| R11 | Medium | `writeSecrets` non-atomic write — crash between truncation and completion corrupts `secrets.json` | Fixed — write to `.tmp` then `renameSync` to final path |
+| R12 | Medium | `vi.clearAllMocks()` without `vi.resetModules()` — module-level state bleeds across tests | Fixed — `vi.resetModules()` added to `beforeEach`; `restoreEncryptionMocks()` helper maintains mock config |
+| R13 | Medium | `useSettings` casts manually re-assert types already in `IpcChannels` — brittle if response types change | User: accepted — acceptable given derive-from-interface approach (S7) makes the types consistent; full wiring deferred to Phase 3+ |
+| R14 | Low | `DEFAULT_PREFERENCES` references `app.getPath()` at module init time — fragile if imported before `app.whenReady()` | Fixed — comment added warning that this module must not be imported before `app.whenReady()` |
+| R15 | Low | `handleSave` doesn't handle `setSecret` failure — input cleared, configured=true even on throw | Fixed — by S4 fix; `handleSave` now checks `result.success` and shows error in `keyStatus` |
+| R16 | Low | `readSecrets` no in-memory cache — 4 disk reads on settings-page load | User: accepted — acceptable; comment added; optimization deferred |
+| R17 | Low | `window.electronAPI` no null guard in `useSettings` | User: accepted — always injected by preload in Electron; null guard is noise in this context |
+| R18 | Low | `key` naming ambiguity between secrets string and `PreferenceKey` enum | Fixed — comments added to `ipc-types.ts` clarifying the distinction per channel group |
+| R19 | Low | `DEFAULT_PREFERENCES` module import-order fragility (duplicate of R14) | Fixed — same fix as R14 |
+| R20 | Low | `safeStorage` top-level import instead of `require()` per brief — divergence not in plan | Fixed in plan — divergence recorded in § 9 Implementation Divergences |
+
+QA annotation: Step 5b SKIP — safeStorage, IPC, and SettingsView require live Electron with real API keys; covered by Phase 8 E2E and Phase 10 smoke test. Unit tests (10/10) cover in-process logic.
