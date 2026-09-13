@@ -3,6 +3,7 @@ import { registerDbHandlers } from './db';
 import { registerRecorderHandlers } from './recorder';
 import { registerChunkerHandlers } from './chunker';
 import { registerTranscriptionHandlers } from './transcription';
+import { registerExportHandlers } from './export';
 import { initDb } from '../db/index';
 
 // S2: Guard against double-registration on hot reload. ipcMain.handle throws on duplicate registration.
@@ -17,5 +18,5 @@ export function registerAllHandlers(): void {
   registerRecorderHandlers();
   registerChunkerHandlers();
   registerTranscriptionHandlers();
-  // Phase 8: registerExportHandlers(), app:reload will be added here
+  registerExportHandlers();
 }

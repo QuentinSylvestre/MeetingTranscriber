@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { initLogger } from './logger';
 import { registerAllHandlers } from './ipc/index';
+import { registerAppProtocol } from './ipc/protocol';
 import { closeDb } from './db/index';
 
 // Logger declared at module scope but initialized after app is ready (F9)
@@ -35,6 +36,7 @@ function createWindow(): void {
 app.whenReady().then(() => {
   log = initLogger(); // Safe: app is ready, getPath works (F9)
   registerAllHandlers(); // Register IPC before creating window
+  registerAppProtocol(); // Register app:// protocol for audio file access (Phase 8)
   log.info('App ready, creating window');
   createWindow();
   // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)

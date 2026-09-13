@@ -170,6 +170,16 @@ export interface IpcChannels {
   };
   // Push event (main → renderer): 'transcription:progress'
   // Sent via mainWindow.webContents.send('transcription:progress', { jobId, status }).
+
+  // Export channels (Phase 8)
+  'export:to-file': {
+    request: { jobId: string };
+    response: { exported: boolean; filePath?: string };
+  };
+  'export:to-clipboard': {
+    request: { jobId: string };
+    response: { copied: boolean };
+  };
 }
 
 // Push event (main → renderer): NOT an invoke channel.

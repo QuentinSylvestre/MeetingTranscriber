@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import SettingsView from './views/SettingsView';
 import RecordView from './views/RecordView';
 import UploadView from './views/UploadView';
+import JobProgressView from './views/JobProgressView';
+import TranscriptView from './views/TranscriptView';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
@@ -15,10 +17,15 @@ const NAV_ITEMS: { id: View; label: string }[] = [
 export default function App(): React.ReactElement {
   const [currentView, setCurrentView] = useState<View>('record');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobAudioPath, setActiveJobAudioPath] = useState<string | null>(null);
 
+  // Called by RecordView when recording has been stopped and MP3 flushed to disk.
+  // Phase 9 will update RecordView to pass audioPath via onJobStarted; for now
+  // onJobStopped gives us the jobId only. Audio path is stored separately when
+  // recording starts (see handleStart in RecordView).
   const handleJobStopped = (jobId: string): void => {
     setActiveJobId(jobId);
-    // Phase 9 will navigate to the progress/transcript view here.
+    // Phase 9 will navigate to progress view and supply the real audio path.
   };
 
   return (
@@ -59,14 +66,24 @@ export default function App(): React.ReactElement {
       </nav>
       {/* Main content */}
       <main style={{ flex: 1, padding: 24, background: '#1e1e2e', color: '#cdd6f4' }}>
-        {currentView === 'settings' && <SettingsView />}
-        {currentView === 'record' && (
+        {currentView === 'progress' && activeJobId ? (
+          <JobProgressView
+            jobId={activeJobId}
+            onComplete={() => setCurrentView('transcript')}
+            onCancel={() => setCurrentView('record')}
+          />
+        ) : currentView === 'transcript' && activeJobId && activeJobAudioPath ? (
+          <TranscriptView jobId={activeJobId} audioPath={activeJobAudioPath} />
+        ) : currentView === 'settings' ? (
+          <SettingsView />
+        ) : currentView === 'upload' ? (
+          <UploadView onJobQueued={(jobId) => {
+            setActiveJobId(jobId);
+            setCurrentView('progress');
+          }} />
+        ) : currentView === 'record' ? (
           <RecordView onJobStopped={handleJobStopped} />
-        )}
-        {currentView === 'upload' && (
-          <UploadView onJobQueued={(jobId) => { setActiveJobId(jobId); }} />
-        )}
-        {currentView !== 'settings' && currentView !== 'record' && currentView !== 'upload' && (
+        ) : (
           <>
             <h2 style={{ marginTop: 0 }}>{currentView.charAt(0).toUpperCase() + currentView.slice(1)}</h2>
             <p style={{ color: '#585b70' }}>
