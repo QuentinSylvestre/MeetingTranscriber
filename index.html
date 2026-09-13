@@ -3,9 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'" />
-    <!-- connect-src 'none' is intentional: renderer makes NO direct network calls.
-         All API calls flow through IPC to the main process. Dev mode bypasses this file. -->
+    <!-- CSP: renderer makes no direct network calls in production.
+         connect-src 'none' is intentional; all API calls go through IPC.
+         Dev mode is served by Vite and bypasses this file. -->
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'none'" />
     <title>Meeting Transcriber</title>
   </head>
   <body>

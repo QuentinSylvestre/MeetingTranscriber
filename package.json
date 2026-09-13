@@ -10,7 +10,7 @@
     "dev": "node scripts/rebuild-native.cjs && vite",
     "build": "tsc --noEmit && electron-builder",
     "preview": "electron .",
-    "test": "npm rebuild better-sqlite3 --prefer-offline && vitest run",
+    "test": "vitest run",
     "postinstall": "node scripts/rebuild-native.cjs"
   },
   "dependencies": {

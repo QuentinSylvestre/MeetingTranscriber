@@ -4,103 +4,75 @@ import type { ProviderName } from '../../shared/ipc-types';
 
 const ACCEPTED_EXTENSIONS = ['.mp3', '.mp4', '.wav', '.m4a', '.ogg'];
 
-interface UploadFormState {
-  file: File | null;
-  provider: ProviderName;
-  language: 'fr' | 'en' | 'auto';
-  title: string;
-  error: string | null;
-}
-
 interface UploadViewProps {
   onJobQueued?: (jobId: string) => void;
 }
 
 export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState<UploadFormState>({
-    file: null,
-    provider: 'assemblyai',
-    language: 'auto',
-    title: '',
-    error: null,
-  });
+  const [file, setFile] = useState<File | null>(null);
+  const [provider, setProvider] = useState<ProviderName>('assemblyai');
+  const [language, setLanguage] = useState<'fr'|'en'|'auto'>('auto');
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const validateFile = (file: File): string | null => {
-    const ext = '.' + (file.name.split('.').pop() ?? '').toLowerCase();
-    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      return `Unsupported file type. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}`;
-    }
-    return null;
+  const validate = (f: File): string | null => {
+    const ext = '.' + (f.name.split('.').pop() ?? '').toLowerCase();
+    return ACCEPTED_EXTENSIONS.includes(ext)
+      ? null
+      : `Unsupported format. Accepted: ${ACCEPTED_EXTENSIONS.join(' ')}`;
   };
 
-  const handleFileSelect = (file: File) => {
-    const error = validateFile(file);
-    setForm(prev => ({ ...prev, file: error ? null : file, error }));
+  const handleSelect = (f: File) => {
+    const err = validate(f);
+    if (err) { setError(err); setFile(null); }
+    else { setError(null); setFile(f); }
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
+    e.preventDefault(); setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    if (f) handleSelect(f);
   };
 
-  const handleTranscribe = async () => {
-    if (!form.file) {
-      setForm(prev => ({ ...prev, error: 'Please select an audio file.' }));
-      return;
-    }
-    const jobId = `job-${Date.now()}`;
-    onJobQueued?.(jobId);
-  };
-
-  const selectStyle: React.CSSProperties = {
-    background: '#313244',
-    border: '1px solid #45475a',
-    color: '#cdd6f4',
-    padding: '6px 10px',
-    borderRadius: 4,
-    fontSize: 13,
-  };
-
-  const dropZoneStyle: React.CSSProperties = {
-    border: `2px dashed ${dragOver ? '#cba6f7' : '#45475a'}`,
-    borderRadius: 8,
-    padding: '32px 24px',
-    textAlign: 'center',
-    background: dragOver ? '#1e1e3e' : '#313244',
-    cursor: 'pointer',
-    marginBottom: 16,
-    color: dragOver ? '#cba6f7' : '#585b70',
-    transition: 'border-color 0.1s, background 0.1s',
+  const handleTranscribe = () => {
+    if (!file) { setError('Please select an audio file.'); return; }
+    onJobQueued?.(`job-${Date.now()}`);
   };
 
   return (
-    <div style={{ color: '#cdd6f4' }}>
-      <h2 style={{ marginTop: 0 }}>Upload</h2>
+    <div>
+      <div className="page-header">
+        <div className="page-title">Upload audio</div>
+        <div className="page-subtitle">Transcribe an existing recording</div>
+      </div>
 
       {/* Drop zone */}
       <div
-        style={dropZoneStyle}
+        className={`drop-zone${dragOver ? ' over' : ''}${file ? ' has-file' : ''}`}
         onClick={() => fileInputRef.current?.click()}
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        role="button"
-        tabIndex={0}
+        role="button" tabIndex={0}
         aria-label="Drop audio file here or click to browse"
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && fileInputRef.current?.click()}
       >
-        {form.file ? (
-          <span style={{ color: '#a6e3a1' }}>✓ {form.file.name}</span>
+        {file ? (
+          <>
+            <div className="drop-icon">✅</div>
+            <div className="drop-text">{file.name}</div>
+            <div className="drop-hint">
+              {(file.size / 1024 / 1024).toFixed(1)} MB — click to change
+            </div>
+          </>
         ) : (
-          <span>
-            Drop audio file here or click to browse
-            <br />
-            <small style={{ fontSize: 11 }}>{ACCEPTED_EXTENSIONS.join(' ')}</small>
-          </span>
+          <>
+            <div className="drop-icon">🎵</div>
+            <div className="drop-text">Drop audio file here or click to browse</div>
+            <div className="drop-hint">{ACCEPTED_EXTENSIONS.join('  ')}</div>
+          </>
         )}
       </div>
 
@@ -109,76 +81,52 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         type="file"
         accept={ACCEPTED_EXTENSIONS.join(',')}
         style={{ display: 'none' }}
-        onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
-        aria-label="Select audio file"
+        onChange={e => e.target.files?.[0] && handleSelect(e.target.files[0])}
       />
 
-      {form.error && (
-        <p role="alert" style={{ color: '#f38ba8', fontSize: 13, margin: '0 0 12px' }}>
-          {form.error}
-        </p>
-      )}
+      {error && <p className="text-error text-sm mb-4" role="alert">{error}</p>}
 
       {/* Options */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div>
-          <label style={{ display: 'block', fontSize: 13, marginBottom: 4 }}>Provider</label>
-          <select
-            value={form.provider}
-            onChange={e => setForm(prev => ({ ...prev, provider: e.target.value as ProviderName }))}
-            style={selectStyle}
-            aria-label="Transcription provider"
-          >
-            {PROVIDER_NAMES.map(p => (
-              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 13, marginBottom: 4 }}>Language</label>
-          <select
-            value={form.language}
-            onChange={e => setForm(prev => ({ ...prev, language: e.target.value as 'fr' | 'en' | 'auto' }))}
-            style={selectStyle}
-            aria-label="Language"
-          >
-            <option value="auto">Auto-detect</option>
-            <option value="fr">French</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-      </div>
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>Transcription settings</h3>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: 13, marginBottom: 4 }}>
-          Title (optional)
-        </label>
-        <input
-          type="text"
-          value={form.title}
-          onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-          placeholder="Meeting title (auto-generated if blank)"
-          style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' }}
-          aria-label="Job title"
-        />
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Provider</label>
+              <select className="form-select" value={provider} onChange={e => setProvider(e.target.value as ProviderName)}>
+                {PROVIDER_NAMES.map(p => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Language</label>
+              <select className="form-select" value={language} onChange={e => setLanguage(e.target.value as 'fr'|'en'|'auto')}>
+                <option value="auto">Auto-detect</option>
+                <option value="fr">French</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Title (optional)</label>
+            <input
+              className="form-input"
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Auto-generated if blank"
+            />
+          </div>
+        </div>
       </div>
 
       <button
+        className={`btn btn-primary btn-lg${!file ? ' btn-disabled' : ''}`}
         onClick={handleTranscribe}
-        disabled={!form.file}
-        style={{
-          background: form.file ? '#cba6f7' : '#45475a',
-          color: '#1e1e2e',
-          border: 'none',
-          borderRadius: 4,
-          padding: '10px 24px',
-          cursor: form.file ? 'pointer' : 'not-allowed',
-          fontSize: 14,
-          fontWeight: 'bold',
-        }}
-        aria-disabled={!form.file}
+        disabled={!file}
       >
-        Transcribe
+        ▶ Transcribe
       </button>
     </div>
   );

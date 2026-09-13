@@ -4,38 +4,18 @@ import SpeakerTurnItem from '../components/SpeakerTurnItem';
 import { useTranscript } from '../hooks/useTranscript';
 import type { TranscriptTurn } from '../../shared/ipc-types';
 
-interface TranscriptViewProps {
-  jobId: string;
-  audioPath: string;
-}
+interface Props { jobId: string; audioPath: string; }
 
-export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps): React.ReactElement {
+export default function TranscriptView({ jobId, audioPath }: Props): React.ReactElement {
   const { turns, loading, error, renameSpeaker, getDisplayName } = useTranscript(jobId);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
-
-  // Convert absolute Windows path to app:// URL
   const audioUrl = `app://${audioPath.replace(/\\/g, '/')}`;
 
-  const handleExportFile = async () => {
-    await window.electronAPI.invoke('export:to-file', { jobId });
-  };
+  const onSeek = useCallback((ms: number) => audioPlayerRef.current?.seekTo(ms), []);
 
-  const handleExportClipboard = async () => {
-    await window.electronAPI.invoke('export:to-clipboard', { jobId });
-  };
+  if (loading) return <div style={{ color: 'var(--overlay1)', padding: 'var(--space-4)' }}>Loading…</div>;
 
-  const onSeek = useCallback((ms: number) => {
-    audioPlayerRef.current?.seekTo(ms);
-  }, []);
-
-  if (loading) return <div style={{ color: '#cdd6f4' }}>Loading transcript...</div>;
-
-  if (error) {
-    return <p style={{ color: '#f38ba8' }}>Failed to load transcript: {error}</p>;
-  }
-
-  // Group turns by chunk for separator rendering
-  const groups: Map<number, TranscriptTurn[]> = new Map();
+  const groups = new Map<number, TranscriptTurn[]>();
   for (const t of turns) {
     if (!groups.has(t.chunk_index)) groups.set(t.chunk_index, []);
     groups.get(t.chunk_index)!.push(t);
@@ -43,60 +23,56 @@ export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps
   const isChunked = groups.size > 1;
 
   return (
-    <div style={{ color: '#cdd6f4' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <h2 style={{ marginTop: 0 }}>Transcript</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface0)' }}>
         <div>
-          <button
-            onClick={() => void handleExportFile()}
-            style={{
-              background: '#a6e3a1', color: '#1e1e2e', border: 'none',
-              borderRadius: 4, padding: '6px 14px', cursor: 'pointer', marginRight: 8,
-            }}
-          >
-            Export ⇩
+          <div className="page-title">Transcript</div>
+          <div className="page-subtitle">
+            {turns.length} turn{turns.length !== 1 ? 's' : ''}
+            {isChunked ? ` · ${groups.size} chunks` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button className="btn btn-success btn-sm" onClick={() => void window.electronAPI.invoke('export:to-file', { jobId })}>
+            ⇩ Export .txt
           </button>
-          <button
-            onClick={() => void handleExportClipboard()}
-            style={{
-              background: '#89b4fa', color: '#1e1e2e', border: 'none',
-              borderRadius: 4, padding: '6px 14px', cursor: 'pointer',
-            }}
-          >
-            Copy 📋
+          <button className="btn btn-ghost btn-sm" onClick={() => void window.electronAPI.invoke('export:to-clipboard', { jobId })}>
+            📋 Copy
           </button>
         </div>
       </div>
 
-      {/* Audio player using app:// protocol */}
+      {error && <p className="text-error text-sm mb-4">{error}</p>}
+
+      {/* Audio player */}
       <AudioPlayer ref={audioPlayerRef} src={audioUrl} />
 
-      {/* Turns grouped by chunk */}
-      {Array.from(groups.entries()).map(([chunkIdx, chunkTurns]) => (
-        <React.Fragment key={chunkIdx}>
-          {isChunked && (
-            <div style={{
-              color: '#585b70', fontSize: 11, textAlign: 'center',
-              padding: '8px 0', borderTop: '1px solid #45475a', margin: '8px 0',
-            }}>
-              — Chunk {chunkIdx + 1} —
-            </div>
-          )}
-          {chunkTurns.map(turn => (
-            <SpeakerTurnItem
-              key={turn.id}
-              turn={turn}
-              displayName={getDisplayName(turn.chunk_index, turn.speaker_label)}
-              onRename={(newName) => void renameSpeaker(turn.chunk_index, turn.speaker_label, newName)}
-              onSeek={onSeek}
-            />
-          ))}
-        </React.Fragment>
-      ))}
+      {/* Turns */}
+      <div className="transcript-turns">
+        {Array.from(groups.entries()).map(([chunkIdx, chunkTurns]) => (
+          <React.Fragment key={chunkIdx}>
+            {isChunked && (
+              <div className="chunk-separator">Chunk {chunkIdx + 1}</div>
+            )}
+            {chunkTurns.map(turn => (
+              <SpeakerTurnItem
+                key={turn.id}
+                turn={turn}
+                displayName={getDisplayName(turn.chunk_index, turn.speaker_label)}
+                onRename={name => void renameSpeaker(turn.chunk_index, turn.speaker_label, name)}
+                onSeek={onSeek}
+              />
+            ))}
+          </React.Fragment>
+        ))}
 
-      {turns.length === 0 && !loading && (
-        <p style={{ color: '#585b70' }}>No transcript content. The recording may have been silent.</p>
-      )}
+        {turns.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--overlay0)', fontSize: 13 }}>
+            No transcript content — the recording may have been silent
+          </div>
+        )}
+      </div>
     </div>
   );
 }

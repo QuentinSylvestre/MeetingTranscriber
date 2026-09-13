@@ -14,27 +14,24 @@ export default class ErrorBoundary extends React.Component<React.PropsWithChildr
   }
 
   handleReload = (): void => {
-    window.electronAPI.invoke('app:reload').catch(() => {
-      window.location.reload();
-    });
+    window.electronAPI.invoke('app:reload').catch(() => window.location.reload());
   };
 
   render(): React.ReactNode {
     if (this.state.hasError) {
       return (
-        <div style={{ color: '#cdd6f4', padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-          <h2 style={{ color: '#f38ba8' }}>Something went wrong</h2>
-          {/* Show a user-friendly message, not the raw error which may contain internal paths */}
-          <p style={{ color: '#585b70', maxWidth: 480, textAlign: 'center' }}>
+        <div className="error-boundary">
+          <div className="error-boundary-icon">⚠</div>
+          <h2 style={{ color: 'var(--error)' }}>Something went wrong</h2>
+          <p style={{ maxWidth: 400 }}>
             An unexpected error occurred. If this keeps happening, please restart the app.
           </p>
           {process.env.NODE_ENV === 'development' && (
-            <pre style={{ color: '#45475a', fontSize: 11, maxWidth: 480 }}>{this.state.error}</pre>
+            <pre style={{ fontSize: 11, color: 'var(--overlay0)', maxWidth: 480, wordBreak: 'break-all', textAlign: 'left', background: 'var(--crust)', padding: 12, borderRadius: 6 }}>
+              {this.state.error}
+            </pre>
           )}
-          <button
-            onClick={this.handleReload}
-            style={{ background: '#cba6f7', color: '#1e1e2e', border: 'none', borderRadius: 4, padding: '8px 20px', cursor: 'pointer' }}
-          >
+          <button className="btn btn-primary" onClick={this.handleReload}>
             Reload app
           </button>
         </div>
