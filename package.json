@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "tsc && electron-builder",
     "preview": "electron .",
-    "test": "vitest run",
+    "test": "npm rebuild better-sqlite3 --prefer-offline && vitest run",
     "postinstall": "node scripts/rebuild-native.cjs"
   },
   "dependencies": {

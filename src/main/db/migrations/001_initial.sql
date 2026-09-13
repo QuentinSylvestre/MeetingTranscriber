@@ -31,3 +31,6 @@ CREATE TABLE IF NOT EXISTS speaker_mappings (
   display_name TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (job_id, chunk_index, speaker_label)
 );
+
+-- F4: index on job_id for getTranscript() hot path (full table scan on large meetings)
+CREATE INDEX IF NOT EXISTS idx_transcript_turns_job_id ON transcript_turns(job_id);
