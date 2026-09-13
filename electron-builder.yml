@@ -1,0 +1,34 @@
+appId: com.meetingtranscriber.app
+productName: Meeting Transcriber
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - dist-main/**/*
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+
+asar: true
+asarUnpack:
+  - node_modules/naudiodon/**
+  - node_modules/better-sqlite3/**
+  - node_modules/ffmpeg-static/**
+
+extraResources:
+  - from: node_modules/ffmpeg-static/ffmpeg.exe
+    to: ffmpeg.exe
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
