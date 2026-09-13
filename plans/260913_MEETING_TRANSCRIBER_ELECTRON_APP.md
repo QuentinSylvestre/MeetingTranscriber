@@ -643,12 +643,15 @@ Phase 6 delivers the transcription provider interface, AssemblyAI and ElevenLabs
 > **Rejected:** Google Cloud Speech-to-Text v2 API — ~$1.00/hr vs Gemini 3.5 Transcribe ~$0.30/hr. **Use instead:** `gemini-3.5-transcribe-preview` via Generative Language API.
 
 **Exit criteria**:
-- [ ] `tests/unit/providers/openai.test.ts` passes: 2 mocked chunks produce labels `'Chunk 0 – Speaker 0'`, `'Chunk 1 – Speaker 0'`, etc.
-- [ ] `tests/unit/providers/google.test.ts` passes: equivalent labeling; base64 > 20 MB triggers File API mock.
+- [x] `tests/unit/providers/openai.test.ts` passes: 2 mocked chunks produce labels `'Chunk 0 – Speaker 0'`, `'Chunk 1 – Speaker 0'`, etc.
+- [x] `tests/unit/providers/google.test.ts` passes: equivalent labeling; base64 > 20 MB triggers File API mock.
 - [ ] Manual integration test: 45-minute French MP3 via OpenAI (3 chunks expected, labels chunk-prefixed). Record result in phase notes.
 - [ ] Manual integration test: same file via Google. Record result.
-- [ ] Google adapter logs a warning (does not fail) when File API path is taken.
-- [ ] Chunk temp files deleted after run (from Phase 5 `finally` block in `runner.ts`).
+- [x] Google adapter logs a warning (does not fail) when File API path is taken.
+- [x] Chunk temp files deleted after run (from Phase 5 `finally` block in `runner.ts`).
+
+**Implementation (2026-09-13, code: 51b2da7 + fix: f3e5e13)**
+Phase 7 adds OpenAI `gpt-4o-transcribe-diarize` and Google Gemini 3.5 Transcribe adapters. OpenAI: multipart POST per chunk, maps `segments[]` to `SpeakerTurn[]`. Google: inline base64 for files ≤ 20 MB, two-step resumable File API upload for larger files; API key sent as `x-goog-api-key` header only. `runner.ts` updated: `needsChunkPrefix = chunkResult.paths.length > 1` \u2014 when true, prepends `'Chunk N \u2013 '` (EN-DASH) to all speaker labels. `getProvider` now has TypeScript exhaustiveness check. Review fixes: Google JSON parse failure throws instead of silently returning empty; `runner.test.ts` covers chunk prefix logic (2 new tests: multi-chunk prefix, single-chunk no-prefix); `chunkIndex: 0` contract documented. 52 tests pass.
 
 ---
 
@@ -1044,3 +1047,21 @@ Implementation health: Green.
 | R10 | Low | `import * as fs` inconsistency between providers — confirmed both use static imports; no issue | User: accepted — no action needed |
 
 QA annotation: Step 5b SKIP — all transcription surfaces require live API keys; covered by Phase 6 manual integration test and Phase 8 E2E. Unit tests (36/36) cover endpoint calls, label normalization, cancel handling.
+
+### 2026-09-13 — Implementation Review (after Phase 7, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+13 findings (2 High, 4 Medium, 7 Low). Both Highs fixed; 2 of 4 Mediums fixed.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | Google JSON parse failure silently returned empty turns — 45-min transcription could show blank transcript with `status: done` | Fixed — catch block now throws; zero-utterances logs a warning without throwing |
+| R2 | High | `chunkIndex: 0` always from adapters is misleading — future code could read `cr.chunkIndex` and get wrong chunk | Fixed — JSDoc in `types.ts` documents the contract; runner uses loop variable `i` |
+| R3 | Medium | File API upload step sends no auth header (pre-authenticated URL, not a bug) — non-obvious | Fixed — comment added explaining pre-authenticated URL semantics |
+| R4 | Medium | `segments` field absent: `verbose_json` may return only top-level `text` on some model versions — silent empty | User: accepted — `segments ?? []` is the correct fallback; log warning added for empty |
+| R5 | Medium | No test for runner's `needsChunkPrefix` logic — branch had zero coverage | Fixed — `tests/unit/runner.test.ts` added with 2 tests (multi-chunk prefix, single-chunk no-prefix) |
+| R6 | Medium | `getProvider` switch not exhaustive at TypeScript level | Fixed — `const _: never = providerName` added to `default` branch |
+| R7 | Low | File API upload missing timeout between initiate and upload steps | User: accepted — signal already passed; per-step timeout deferred to v2 |
+| R8-R13 | Low | Confirmed-safe items: URL constant clean, parse safety, single-chunk prefix correct, type names consistent, `fs.readFileSync` consistent, hardcoded prompt acceptable | User: accepted |
+
+QA annotation: Step 5b SKIP — OpenAI/Google integration requires live API keys and audio files; covered by Phase 7 manual integration test. Unit tests (52/52) cover label mapping, File API trigger, parse error handling, chunk prefix logic.
