@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import AudioPlayer from '../components/AudioPlayer';
+import React, { useCallback, useRef } from 'react';
+import AudioPlayer, { type AudioPlayerRef } from '../components/AudioPlayer';
 import SpeakerTurnItem from '../components/SpeakerTurnItem';
 import { useTranscript } from '../hooks/useTranscript';
 import type { TranscriptTurn } from '../../shared/ipc-types';
@@ -10,17 +10,11 @@ interface TranscriptViewProps {
 }
 
 export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps): React.ReactElement {
-  const { turns, loading, renameSpeaker, getDisplayName } = useTranscript(jobId);
+  const { turns, loading, error, renameSpeaker, getDisplayName } = useTranscript(jobId);
+  const audioPlayerRef = useRef<AudioPlayerRef>(null);
 
   // Convert absolute Windows path to app:// URL
   const audioUrl = `app://${audioPath.replace(/\\/g, '/')}`;
-
-  const handleSeek = useCallback((audioElement: HTMLAudioElement | null, ms: number) => {
-    if (audioElement) {
-      audioElement.currentTime = ms / 1000;
-      void audioElement.play();
-    }
-  }, []);
 
   const handleExportFile = async () => {
     await window.electronAPI.invoke('export:to-file', { jobId });
@@ -30,7 +24,15 @@ export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps
     await window.electronAPI.invoke('export:to-clipboard', { jobId });
   };
 
+  const onSeek = useCallback((ms: number) => {
+    audioPlayerRef.current?.seekTo(ms);
+  }, []);
+
   if (loading) return <div style={{ color: '#cdd6f4' }}>Loading transcript...</div>;
+
+  if (error) {
+    return <p style={{ color: '#f38ba8' }}>Failed to load transcript: {error}</p>;
+  }
 
   // Group turns by chunk for separator rendering
   const groups: Map<number, TranscriptTurn[]> = new Map();
@@ -67,7 +69,7 @@ export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps
       </div>
 
       {/* Audio player using app:// protocol */}
-      <AudioPlayer src={audioUrl} />
+      <AudioPlayer ref={audioPlayerRef} src={audioUrl} />
 
       {/* Turns grouped by chunk */}
       {Array.from(groups.entries()).map(([chunkIdx, chunkTurns]) => (
@@ -81,12 +83,12 @@ export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps
             </div>
           )}
           {chunkTurns.map(turn => (
-            <SpeakerTurnItemWrapper
+            <SpeakerTurnItem
               key={turn.id}
               turn={turn}
-              getDisplayName={getDisplayName}
-              renameSpeaker={renameSpeaker}
-              handleSeek={handleSeek}
+              displayName={getDisplayName(turn.chunk_index, turn.speaker_label)}
+              onRename={(newName) => void renameSpeaker(turn.chunk_index, turn.speaker_label, newName)}
+              onSeek={onSeek}
             />
           ))}
         </React.Fragment>
@@ -96,31 +98,5 @@ export default function TranscriptView({ jobId, audioPath }: TranscriptViewProps
         <p style={{ color: '#585b70' }}>No transcript content. The recording may have been silent.</p>
       )}
     </div>
-  );
-}
-
-// Wrapper to supply seekTo via a ref
-function SpeakerTurnItemWrapper({
-  turn, getDisplayName, renameSpeaker, handleSeek,
-}: {
-  turn: TranscriptTurn;
-  getDisplayName: (chunkIndex: number, speakerLabel: string) => string;
-  renameSpeaker: (chunkIndex: number, speakerLabel: string, displayName: string) => Promise<void>;
-  handleSeek: (audio: HTMLAudioElement | null, ms: number) => void;
-}) {
-  // For Phase 8, seekTo requires access to the audio element.
-  // Dispatch via querySelector — AudioPlayer renders the sole <audio> element.
-  const onSeek = (ms: number) => {
-    const audio = document.querySelector('audio') as HTMLAudioElement | null;
-    handleSeek(audio, ms);
-  };
-
-  return (
-    <SpeakerTurnItem
-      turn={turn}
-      displayName={getDisplayName(turn.chunk_index, turn.speaker_label)}
-      onRename={(newName) => void renameSpeaker(turn.chunk_index, turn.speaker_label, newName)}
-      onSeek={onSeek}
-    />
   );
 }

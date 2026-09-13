@@ -51,7 +51,7 @@ export default function SpeakerLabel({ displayName, onRename, onSeek }: SpeakerL
       title="Click to seek, double-click to rename"
       role="button"
       tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter') startEdit(); }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') startEdit(); }}
       aria-label={`Speaker: ${displayName}. Click to seek audio.`}
     >
       {displayName}

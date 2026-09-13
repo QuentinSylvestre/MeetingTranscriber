@@ -5,10 +5,12 @@ export function useTranscript(jobId: string | null) {
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [speakerMappings, setSpeakerMappings] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!jobId) { setTurns([]); setSpeakerMappings(new Map()); return; }
     setLoading(true);
+    setError(null);
     Promise.all([
       window.electronAPI.invoke('db:get-transcript', { job_id: jobId }) as Promise<TranscriptTurn[]>,
       window.electronAPI.invoke('db:get-speaker-mappings', { job_id: jobId }) as Promise<SpeakerMapping[]>,
@@ -19,7 +21,10 @@ export function useTranscript(jobId: string | null) {
         map.set(`${m.chunk_index}::${m.speaker_label}`, m.display_name);
       }
       setSpeakerMappings(map);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+      console.error('useTranscript load error:', err);
+    }).finally(() => setLoading(false));
   }, [jobId]);
 
   const renameSpeaker = useCallback(async (
@@ -45,5 +50,5 @@ export function useTranscript(jobId: string | null) {
     return speakerMappings.get(`${chunkIndex}::${speakerLabel}`) || speakerLabel;
   }, [speakerMappings]);
 
-  return { turns, speakerMappings, loading, renameSpeaker, getDisplayName };
+  return { turns, speakerMappings, loading, error, renameSpeaker, getDisplayName };
 }

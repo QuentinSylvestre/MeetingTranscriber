@@ -29,15 +29,29 @@ function formatTranscript(jobId: string): string {
     .join('\n');
 }
 
+/** Windows reserved device names. */
+const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i;
+
 export function registerExportHandlers(): void {
   ipcMain.handle('export:to-file', async (_event, { jobId }: { jobId: string }) => {
     const job = getJob(jobId);
     if (!job) throw new Error(`Job not found: ${jobId}`);
 
+    const sanitizedTitle = job.title
+      .replace(/[<>:"/\\|?*]/g, '_') // illegal Windows filename chars
+      .replace(/[.\s]+$/, '')         // trailing dots/spaces (Windows rejects these)
+      .trim()
+      || 'transcript';                // fallback if the whole title was stripped
+
+    const filename = WINDOWS_RESERVED.test(sanitizedTitle)
+      ? `transcript_${sanitizedTitle}`
+      : sanitizedTitle;
+    const defaultPath = `${filename}.txt`;
+
     const win = BrowserWindow.getAllWindows()[0];
     const result = await dialog.showSaveDialog(win, {
       title: 'Export Transcript',
-      defaultPath: `${job.title.replace(/[<>:"/\\|?*]/g, '_')}.txt`,
+      defaultPath,
       filters: [{ name: 'Text', extensions: ['txt'] }],
     });
 
@@ -51,6 +65,7 @@ export function registerExportHandlers(): void {
 
   ipcMain.handle('export:to-clipboard', (_event, { jobId }: { jobId: string }) => {
     const text = formatTranscript(jobId);
+    if (!text.trim()) return { copied: false, reason: 'no_turns' };
     clipboard.writeText(text);
     log.info(`Transcript copied to clipboard for job ${jobId}`);
     return { copied: true };
