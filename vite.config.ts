@@ -29,7 +29,7 @@ export default defineConfig({
         },
       },
       preload: {
-        input: 'src/preload/index.ts',
+        input: { preload: 'src/preload/index.ts' },
       },
     }),
   ],
