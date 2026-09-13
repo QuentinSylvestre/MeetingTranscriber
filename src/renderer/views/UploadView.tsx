@@ -5,7 +5,7 @@ import type { ProviderName } from '../../shared/ipc-types';
 const ACCEPTED_EXTENSIONS = ['.mp3', '.mp4', '.wav', '.m4a', '.ogg'];
 
 interface UploadViewProps {
-  onJobQueued?: (jobId: string) => void;
+  onJobQueued?: (jobId: string, audioPath: string) => void;
 }
 
 export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
@@ -16,6 +16,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const validate = (f: File): string | null => {
     const ext = '.' + (f.name.split('.').pop() ?? '').toLowerCase();
@@ -36,9 +37,37 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
     if (f) handleSelect(f);
   };
 
-  const handleTranscribe = () => {
+  const handleTranscribe = async () => {
     if (!file) { setError('Please select an audio file.'); return; }
-    onJobQueued?.(`job-${Date.now()}`);
+    // Electron extends the web File API with a .path property containing the absolute path.
+    const filePath = (file as File & { path?: string }).path;
+    if (!filePath) {
+      setError('Could not read file path — please try dragging the file instead of using the picker.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const jobId = `job-${Date.now()}`;
+      const destPath = await window.electronAPI.invoke('settings:copy-upload', {
+        srcPath: filePath,
+        jobId,
+        fileName: file.name,
+      }) as string;
+
+      await window.electronAPI.invoke('transcription:start-job', {
+        jobId,
+        title: title.trim() || file.name.replace(/\.[^.]+$/, ''),
+        audioPath: destPath,
+        provider,
+        model: 'default',
+        language,
+      });
+      onJobQueued?.(jobId, destPath);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -122,11 +151,11 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
       </div>
 
       <button
-        className={`btn btn-primary btn-lg${!file ? ' btn-disabled' : ''}`}
+        className={`btn btn-primary btn-lg${(!file || submitting) ? ' btn-disabled' : ''}`}
         onClick={handleTranscribe}
-        disabled={!file}
+        disabled={!file || submitting}
       >
-        ▶ Transcribe
+        {submitting ? '⏳ Starting…' : '▶ Transcribe'}
       </button>
     </div>
   );

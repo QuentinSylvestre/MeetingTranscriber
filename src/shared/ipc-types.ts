@@ -65,6 +65,12 @@ export interface IpcChannels {
     request: { key: PreferenceKey; value: unknown };
     response: void;
   };
+  'settings:copy-upload': {
+    // Copy an externally-browsed file into the recordings folder.
+    // Returns the destination absolute path.
+    request: { srcPath: string; jobId: string; fileName: string };
+    response: string;
+  };
   // app:reload used by ErrorBoundary (Phase 9)
   'app:reload': {
     request: void;

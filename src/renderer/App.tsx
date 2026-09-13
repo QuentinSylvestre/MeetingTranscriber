@@ -50,8 +50,9 @@ export default function App(): React.ReactElement {
           ) : currentView === 'settings' ? (
             <SettingsView />
           ) : currentView === 'upload' ? (
-            <UploadView onJobQueued={(jobId) => {
+            <UploadView onJobQueued={(jobId, audioPath) => {
               setActiveJobId(jobId);
+              setActiveJobAudioPath(audioPath);
               setCurrentView('progress');
             }} />
           ) : currentView === 'record' ? (

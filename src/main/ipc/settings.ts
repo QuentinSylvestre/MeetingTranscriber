@@ -1,4 +1,6 @@
 import { ipcMain } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
 import log from 'electron-log';
 import * as store from '../settings/store';
 import type { ProviderName, PreferenceKey, Preferences } from '../../shared/ipc-types';
@@ -33,5 +35,21 @@ export function registerSettingsHandlers(): void {
       return;
     }
     store.setPreference(key, value as Preferences[typeof key]);
+  });
+
+  // Copy an uploaded file into the recordings folder so it passes path confinement checks.
+  // Returns the destination absolute path.
+  ipcMain.handle('settings:copy-upload', (_event, { srcPath, jobId, fileName }: { srcPath: string; jobId: string; fileName: string }) => {
+    if (!srcPath || !path.isAbsolute(srcPath)) {
+      throw new Error('srcPath must be an absolute path');
+    }
+    const recordingsFolder = store.getPreference('recordingsFolder');
+    const ext = path.extname(fileName) || '.audio';
+    const destName = `upload-${jobId}${ext}`;
+    const destPath = path.join(recordingsFolder, destName);
+    fs.mkdirSync(recordingsFolder, { recursive: true });
+    fs.copyFileSync(srcPath, destPath);
+    log.info(`Copied upload ${srcPath} -> ${destPath}`);
+    return destPath;
   });
 }
