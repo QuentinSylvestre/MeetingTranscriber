@@ -1,7 +1,7 @@
 # Meeting Transcriber Electron App
 
 > **Date**: 2026-09-13
-> **Status**: Draft  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Status**: In Progress  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Windows-only Electron app for recording and transcribing meetings with speaker diarization via multiple cloud providers
 > **Estimated effort**: 6–9 weeks (solo developer)
@@ -99,6 +99,7 @@ Build a production-ready Windows desktop app that records or accepts meeting aud
 | Testing | Vitest for unit/integration (provider adapters, db layer, chunker); manual E2E for recording + transcription | Playwright for Electron E2E | Audio recording cannot be reliably automated headlessly; provider tests need live API keys |
 | Logging | `electron-log` writing to `userData/logs/app.log` with rotation | Console only, no structured logging | Enables post-mortem debugging; API errors logged without logging key values |
 | Fallback for naudiodon failure | Log error, disable loopback toggle in UI, mic-only mode | Hard fail, alternative virtual cable | Graceful degradation; loopback is optional; user can still record mic |
+| **naudiodon ABI result (Phase 1 spike)** | **FAIL — fallback activated: WASAPI loopback disabled for v1; mic-only mode** | naudiodon prebuilt OK | Phase 1 ABI spike ran via `node_modules/electron/dist/electron.exe scripts/verify-abi-runner2.js`. naudiodon: FAIL (no prebuilt `.node` for Electron 36 ABI 135; native build fails — Windows SDK 10.0.26100.0 not found). Fallback: loopback toggle disabled in UI, mic capture via Web Audio API only. Phase 4 `loopback.ts` will export a `LoopbackDisabled` stub. better-sqlite3: OK (prebuilt `v12.11.1-electron-v135-win32-x64` downloaded and placed in `build/Release/`). SharedArrayBuffer: OK. |
 
 ## 4) External Dependencies & Costs
 
@@ -207,12 +208,15 @@ Testing budget: ~$5–10 per provider for integration testing. Total developer t
 8. Configure `.gitignore` (node_modules, dist, out, `*.node` unless in release bundle).
 
 **Exit criteria**:
-- [ ] `npm run dev` launches the Electron window with sidebar, 4 navigation items, and navigation state working.
-- [ ] `scripts/verify-abi.ts` runs without error and prints `naudiodon: OK` and `better-sqlite3: OK` (or documents which fallback was chosen and why in this plan's Design Decisions table).
+- [x] `npm run dev` launches the Electron window with sidebar, 4 navigation items, and navigation state working.
+- [x] `scripts/verify-abi.ts` runs without error and prints `naudiodon: OK` and `better-sqlite3: OK` (or documents which fallback was chosen and why in this plan's Design Decisions table).
 - [ ] `npm run build` produces a NSIS installer with native `.node` files outside asar (verified with `asar list dist/*.asar` — no `.node` files listed).
-- [ ] `sandbox: true` is set in the `BrowserWindow` `webPreferences`.
-- [ ] `electron-log` writes to `userData/logs/app.log` on launch.
-- [ ] `.gitignore` committed; `node_modules/` not tracked.
+- [x] `sandbox: true` is set in the `BrowserWindow` `webPreferences`.
+- [x] `electron-log` writes to `userData/logs/app.log` on launch.
+- [x] `.gitignore` committed; `node_modules/` not tracked.
+
+**Implementation (2026-09-13, code: fb55ed2 + fix: 1df94a1 + a6445da)**
+Phase 1 establishes the complete project scaffold for the Meeting Transcriber Electron app. `package.json` with `type: module` (required by vite-plugin-electron), pinned versions for all dependencies, and a `postinstall` hook (`scripts/rebuild-native.cjs`) that calls `@electron/rebuild` programmatically. `better-sqlite3` pinned at `12.11.1` — v13 has empty prebuilt GitHub release assets; v12.11.1 ships `electron-v135-win32-x64` prebuilt for Electron 36 ABI 135. Build pipeline uses `vite-plugin-electron/simple` to bundle renderer (React 18), main process, and preload into `dist-electron/`. ABI spike confirmed: naudiodon FAIL (no prebuilt for Electron 36; WASAPI loopback disabled for v1, mic-only fallback activated per plan), better-sqlite3 OK, SharedArrayBuffer OK. Review cycle identified and fixed 13 findings (7 High): electron-builder `files` included `node_modules/**` (removed), dist path mismatch (`dist-main` vs `dist-electron`), missing `rootDir` in `tsconfig.node.json`, ffmpeg double-copy, `rebuild-native.cjs` exit(0) on failure, missing `app.whenReady().catch`, unhandled `loadURL/loadFile` promises. Electron version pinned to `36.9.5` (was `^36.9.5`).
 
 ---
 
@@ -828,7 +832,16 @@ The protocol supports HTTP range requests by delegating to `protocol.registerFil
 | `AGENTS.md` | Create: Doc & Test Guidelines bootstrap (proposed separately after plan commit) | N/A (doc-table-only) |
 
 ## 9) Implementation Divergences from Plan
-<Reserved — filled during implementation>
+
+| Phase | Divergence | Rationale |
+|---|---|---|
+| 1 | `better-sqlite3` downgraded to v12.11.1 (plan specified latest) | v13.0.x has no prebuilt GitHub release assets for Electron 36 ABI 135; v12.11.1 has confirmed prebuilt. API is backward-compatible for all Phase 1–10 usage. |
+| 1 | `scripts/rebuild-native.js` renamed to `scripts/rebuild-native.cjs` | `package.json` requires `"type": "module"` (needed by vite-plugin-electron); `.js` with `require()` fails under ESM. `.cjs` extension forces CJS treatment. |
+| 1 | `naudiodon`: FAIL — WASAPI loopback disabled for v1 (fallback activated) | No prebuilt `.node` for Electron 36 ABI 135; native compilation requires Windows SDK 10.0.26100.0 not present. Per plan fallback: loopback toggle disabled in UI; Phase 4 `loopback.ts` exports `LoopbackDisabled` stub. |
+| 1 | `verify-abi.ts` ran via CJS wrapper, not direct TypeScript execution | Electron cannot import TypeScript without ts-node registration at runtime. CJS wrapper executed equivalent spike logic; original `.ts` committed for documentation. |
+| 1 | `.gitignore` extended to include `dist-electron/` | `vite-plugin-electron` outputs to `dist-electron/` which was not covered by the original `dist/` entry. |
+| 1 | `electron-builder.yml` `files` array: `node_modules/**/*` removed; `dist-main/**/*` replaced with `dist-electron/**/*` | Review finding: bundling `node_modules` produces unusable 500 MB+ installer; dist path must match vite-plugin-electron output. |
+| 1 | `tsconfig.node.json` gained `rootDir: "src"`, `outDir` updated to `dist-electron`, `scripts/**/*` removed from `include` | Review finding: missing `rootDir` caused unpredictable TypeScript output paths; `scripts/` should not be compiled into the main process bundle. |
 
 ## Follow-up Work (Deferred)
 
@@ -871,3 +884,31 @@ High-effort review (4 personas: Architect, Senior engineer, Security auditor, Re
 
 ## Harness Improvement Opportunities
 - `/qexplore` interview enforces one-question-at-a-time but this session had several multi-question turns before the user correction — the harness could enforce it at the tool level, not just by governance instruction. Cost: unclear. Suggested change: add a one-question-at-a-time check to the session-submission hook.
+- Phase 1 was annotated `[QA]` but has no independently-exercisable automated runtime surface (it is a pure scaffold + spike). QA returned SKIP with an annotation-mismatch note. Cost: one wasted `/qqa` invocation per scaffold phase. Suggested change: document in `shared/skills/qplan/TEMPLATES.md` that `[QA]` should be omitted from phases whose only verifiable output is "app opens" or "script runs successfully."
+
+### 2026-09-13 — Implementation Review (after Phase 1, persona: Senior engineer, Security auditor, Architect, Reliability engineer)
+
+Implementation health: Green.
+17 findings across 2 review cycles (7 High, 6 Medium, 4 Low cycle-1; 2 High cycle-2 both resolved as false positive / Low cosmetic).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `electron-builder files` includes `node_modules/**/*` — 500 MB+ packed into asar, unusable installer | Fixed — removed `node_modules/**/*` from files array |
+| R2 | High | `dist-main/**/*` in electron-builder files but vite-plugin-electron outputs to `dist-electron/` — main bundle never packaged | Fixed — changed to `dist-electron/**/*`; `package.json` main updated to `dist-electron/index.js` |
+| R3 | High | `tsconfig.node.json` missing `rootDir` — TypeScript output path unpredictable; `dist-main/src/main/index.js` not `dist-main/main/index.js` | Fixed — added `"rootDir": "src"`; removed `scripts/**/*` from include; `outDir` aligned to `dist-electron` |
+| R4 | High | `ffmpeg-static` in both `asarUnpack` and `extraResources` — double copy, conflicting path resolution | Fixed — removed from `asarUnpack`; `extraResources` entry retained (correct for spawn'd executables) |
+| R5 | High | `rebuild-native.cjs` calls `process.exit(0)` on failure — npm reports success for broken native addons | Fixed — changed to `process.exit(1)` with actionable error message |
+| R6 | High | `app.whenReady()` has no `.catch()` — rejected promise leaves app running with no window, no log | Fixed — added `.catch()` that logs and calls `app.quit()` |
+| R7 | High | CSP `connect-src 'none'` context: correct for production (renderer never makes direct API calls); dev served by Vite not this file | Fixed — added comment clarifying intentional design; no behavior change needed |
+| R8 | Medium | `win.loadURL/loadFile` promises not caught — blank window on failure, nothing logged | Fixed — both wrapped with `.catch()` calling `log.error` |
+| R9 | Medium | `initLogger()` called before `app.whenReady()` — fragile pre-ready `app.getPath` access | Fixed — deferred to inside `app.whenReady().then()` |
+| R10 | Medium | Electron version `^36.9.5` unpinned — silent ABI upgrade would break native addon prebuilts | Fixed — pinned to `36.9.5` |
+| R11 | Medium | `"build": "tsc && electron-builder"` — `tsc` runs noEmit tsconfig, doesn't compile main process | User: accepted — tsc serves as type-check only; vite-plugin-electron handles main bundling; build pipeline is correct as-is |
+| R12 | Medium | `"type": "module"` vs CJS vite-plugin-electron output — needs verification | User: accepted — confirmed: vite-plugin-electron outputs `dist-electron/index.js` (CJS) correctly under ESM package; working in practice |
+| R13 | Low | `activeJobId` state in App.tsx will require prop drilling through 4+ view layers by Phase 6 | User: accepted — noted for Phase 5 planning; a `JobContext` should be introduced before TranscriptView/ProgressView |
+| R14 | Low | `scripts/verify-abi.ts` remains in tsconfig.node.json include (resolving with R3 which removed it) | Fixed — already resolved by R3 fix (scripts excluded from tsconfig.node.json) |
+| R15 | Low | `app.on('activate', ...)` unreachable dead code on Windows-only target | User: accepted — harmless standard Electron boilerplate; comment added |
+| R16 | Low | Platform guard `!== 'darwin'` unconditionally true on Windows | User: accepted — correct behavior; harmless for Windows-only target |
+| R17 | Low | `tsconfig.node.json outDir: dist-main` inconsistent with `dist-electron` in builder (cycle-2 finding) | Fixed — `outDir` aligned to `dist-electron` in commit a6445da |
+
+QA annotation: Step 5b SKIP — Electron window launch verified by implementation spike during Phase 1; no independently-automatable surface for a scaffold-only phase. This is an annotation mismatch: future plan revisions should omit `[QA]` from pure scaffold phases.
