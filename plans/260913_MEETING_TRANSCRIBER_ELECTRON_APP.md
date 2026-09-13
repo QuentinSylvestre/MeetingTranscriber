@@ -427,10 +427,10 @@ The `SharedArrayBuffer` ring buffer is allocated in the main process and shared 
 - [ ] Disk space check fires and shows a dialog when < 500 MB available before recording starts.
 - [x] `ScriptProcessorNode` does not appear in any source file (grep `src/renderer` for `ScriptProcessor` returns no hits).
 
-**Implementation (2026-09-13, code: 75fd65e)**
+**Implementation (2026-09-13, code: 75fd65e + fix: c5bcbc1)**
 Phase 4 implements the audio recording engine. Architecture divergence from plan: SharedArrayBuffer ring buffer replaced with IPC-batched PCM (AudioWorklet batches ~50 ms of PCM and calls `ipcRenderer.invoke('recorder:pcm-chunk')` once per batch — 20 calls/s vs 4410/s per-frame). SABs created in the renderer cannot be transferred to the main process through Electron IPC serialisation; the IPC-batched approach avoids this without meaningful quality loss for speech at 128 kbps.
 
-`encoder.ts` loads `lamejs/lame.all.js` (the self-contained single-file bundle) via `new Function('lamejs', code + '; return lamejs;')` instead of lamejs's package `main` (`src/js/index.js`). The split-file version depends on browser-style global scope sharing between CJS modules (`Lame.js` references `MPEGMode` without requiring it), which breaks under modern Node.js (v24 on this machine). `lame.all.js` is self-contained and works correctly.
+`encoder.ts` loads `lamejs/lame.all.js` (the self-contained single-file bundle) via `new Function(code + '; return lamejs;')` instead of lamejs's package `main` (`src/js/index.js`). The split-file version depends on browser-style global scope sharing between CJS modules (`Lame.js` references `MPEGMode` without requiring it), which breaks under modern Node.js (v24 on this machine). `lame.all.js` is self-contained and works correctly. Review cycle fixed: encoder.ts added as Vite entry (was not bundled), audioPath confinement to recordings folder, `stopRecording` handles encoder error before flush, dialog shown on low disk space, 50ms in-flight PCM forwarded during stopping. 19 tests pass.
 
 Three encoder tests pass: sine-wave MP3 sync word confirmed, flush-within-2s, pause/resume gating.
 
@@ -858,6 +858,8 @@ The protocol supports HTTP range requests by delegating to `protocol.registerFil
 | 2 | `store.ts` uses top-level `import { safeStorage } from 'electron'` instead of `require('electron')` inside each function body | `vi.mock('electron')` in Vitest only intercepts ESM static imports, not `require()` inside function bodies. The plan noted the `require()` form as acceptable if circular import is not a concern; in practice the static import is required for test isolation. |
 | 3 | Migration SQL inlined in `db/index.ts` constant instead of read from `migrations/` directory at runtime | vite-plugin-electron does not copy `src/main/db/migrations/` to `dist-electron/`; runtime `fs.readdir` of `__dirname + '/migrations'` would find an empty directory in production. Inlining guarantees the schema is always available. `001_initial.sql` file retained as documentation. |
 | 3 | `package.json` `test` script rebuilds `better-sqlite3` for Node before running Vitest | `postinstall` rebuilds native addons for Electron ABI; Vitest runs under plain Node. Without a pretest rebuild, tests fail with `NODE_MODULE_VERSION mismatch`. |
+| 4 | SharedArrayBuffer ring buffer replaced with IPC-batched PCM (20 calls/s) | SABs created in the renderer cannot be transferred to the main process through Electron IPC serialisation. AudioWorklet batches ~50ms of PCM; IPC overhead is acceptable for speech at 128 kbps. |
+| 4 | `lamejs` loaded via `lame.all.js` (self-contained bundle) using `new Function()` instead of package `main` | `src/js/index.js` (lamejs package main) depends on browser-style global scope sharing between CJS modules that breaks under Node.js v24+. `lame.all.js` is self-contained and works correctly. |
 
 ## Follow-up Work (Deferred)
 
@@ -977,3 +979,21 @@ Implementation health: Green.
 | R9 | Low | `SELECT *` throughout — schema drift invisible at TypeScript level | User: accepted — TypeScript cast types provide compile-time safety; explicit columns deferred |
 
 QA annotation: Step 5b SKIP — `db.sqlite` creation on first launch requires live Electron; covered by Phase 10 smoke test. Unit tests (16/16 pass) cover CRUD, batch perf, cascade, upsert.
+
+### 2026-09-13 — Implementation Review (after Phase 4, persona: Performance engineer, Reliability engineer, Security auditor, Senior engineer)
+
+Implementation health: Green.
+8 findings (2 High, 4 Medium, 2 Low). All auto-fixed in commit `c5bcbc1`.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `encoder.ts` not declared as a Vite entry — `new Worker('encoder.js')` fails with MODULE_NOT_FOUND in both dev and production | Fixed — `encoder.ts` added as second entry in `vite.config.ts` main entry array |
+| R2 | High | `audioPath` from renderer passed to disk unconfined — renderer can supply any path, overwriting system files | Fixed — `startRecording()` asserts `audioPath` starts with `getPreference('recordingsFolder')` |
+| R3 | Medium | `.once('message')` in `stopRecording()` only handles `'flushed'`; an `'error'` message fires the handler and promise hangs 5s | Fixed — handler now resolves on 'flushed', rejects with error message on any other type |
+| R4 | Medium | Disk space check logs only, shows no dialog — plan exit criterion explicitly requires a warning dialog | Fixed — `dialog.showMessageBox()` (non-blocking) called when < 500 MB available |
+| R5 | Medium | `loadLamejs` passes a `lamejs` parameter but `function lamejs()` hoisting in the wrapper shadows it — comment and code misleading | Fixed — parameter removed; comment updated to explain hoisting semantics |
+| R6 | Medium | `receivePcmChunk` drops PCM during `'stopping'` status — final 50ms of audio lost on stop | Fixed — guard allows forwarding during `'stopping'` as well as `'recording'` |
+| R7 | Low | Worklet allocates new `Int16Array` per 50ms batch in audio-critical thread — potential GC pressure on low-end hardware | User: accepted — profiling deferred; transferable ArrayBuffer optimization noted for v2 |
+| R8 | Low | IPC PCM path creates 3 buffer copies per batch (worklet slice → IPC number[] → Int16Array in main) — ~1.3 GB allocations for 4h recording | User: accepted — acceptable for v1; transferable optimization noted for v2 |
+
+QA annotation: Step 5b SKIP — mic recording, pause/resume, MP3 playback, duration counter all require live Electron + microphone. Unit tests cover encoder correctness (sync word, flush timing, pause/resume gating). 19/19 pass.
