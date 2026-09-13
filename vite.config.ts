@@ -22,6 +22,9 @@ export default defineConfig({
             rollupOptions: {
               external: EXTERNAL_NATIVE,
             },
+            rolldownOptions: {
+              external: EXTERNAL_NATIVE,
+            },
           },
         },
       },
