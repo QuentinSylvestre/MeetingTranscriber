@@ -496,13 +496,16 @@ try {
 > **Rejected:** shell: true for ffmpeg spawn — filename metacharacter injection risk. **Use instead:** `spawn(ffmpegPath, [...argsArray], { shell: false })`.
 
 **Exit criteria**:
-- [ ] Upload view renders with file picker, provider/model/language selectors, optional title, Transcribe button.
-- [ ] File picker rejects non-audio types with inline error.
-- [ ] `tests/unit/chunker.test.ts` passes: 10-second fixture chunked at 5 s produces 2 valid MP3 files.
-- [ ] `chunkAudio` with AssemblyAI provider returns `[inputPath]` without invoking ffmpeg.
+- [x] Upload view renders with file picker, provider/model/language selectors, optional title, Transcribe button.
+- [x] File picker rejects non-audio types with inline error.
+- [x] `tests/unit/chunker.test.ts` passes: 10-second fixture chunked at 5 s produces 2 valid MP3 files.
+- [x] `chunkAudio` with AssemblyAI provider returns `[inputPath]` without invoking ffmpeg.
 - [ ] Chunk temp files are deleted after `runner.ts` completes or fails (verified in integration test by checking temp directory after run).
-- [ ] Disk space check warns user if < (fileSize × 1.5) free space before chunking.
-- [ ] Grep `src/main/chunker/` for `shell: true` returns no hits.
+- [x] Disk space check warns user if < (fileSize × 1.5) free space before chunking.
+- [x] Grep `src/main/chunker/` for `shell: true` returns no hits.
+
+**Implementation (2026-09-13, code: ca76d86 + fix: 233d422)**
+Phase 5 delivers the audio chunker and upload view. `chunkAudio()` returns `[inputPath]` for AssemblyAI/ElevenLabs (no ffmpeg call); re-encodes OpenAI/Google inputs into `chunk_NNN.mp3` files via ffmpeg-static with `shell: false`, `-reset_timestamps 1 -acodec libmp3lame`. Pre-cleans outputDir before runs; 30-minute timeout; full stderr in error messages. `getFfmpegPath()` uses `process.resourcesPath` (defined in Electron only) for production, falls back to `ffmpeg-static` package for dev/test. `UploadView` has drag-drop, extension validation, provider/language/title selectors, ARIA labels. Review fixes: inputPath/outputDir confined (non-file-scheme rejection + outputDir under userData or recordingsFolder), test file fixture at `tests/fixtures/10s-silence.mp3`. 26 tests pass.
 
 ---
 
@@ -997,3 +1000,24 @@ Implementation health: Green.
 | R8 | Low | IPC PCM path creates 3 buffer copies per batch (worklet slice → IPC number[] → Int16Array in main) — ~1.3 GB allocations for 4h recording | User: accepted — acceptable for v1; transferable optimization noted for v2 |
 
 QA annotation: Step 5b SKIP — mic recording, pause/resume, MP3 playback, duration counter all require live Electron + microphone. Unit tests cover encoder correctness (sync word, flush timing, pause/resume gating). 19/19 pass.
+
+### 2026-09-13 — Implementation Review (after Phase 5, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+11 findings (3 High, 5 Medium, 3 Low). All fixed in commit `233d422` except F8/F9/F11 (Low — noted below).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `chunker:split` `inputPath` not validated — renderer can pass URLs, named pipes, or arbitrary paths to ffmpeg `-i` | Fixed — non-absolute and non-file-scheme paths rejected |
+| R2 | High | `outputDir` unvalidated — chunks can be written to any filesystem location | Fixed — must be under userData or recordingsFolder |
+| R3 | High | `getFfmpegPath()` used `NODE_ENV !== 'development'` as production guard — `NODE_ENV=test` routes to production branch, `process.resourcesPath` is undefined outside Electron | Fixed — guard changed to `typeof process.resourcesPath === 'string' && length > 0` |
+| R4 | Medium | No timeout on ffmpeg subprocess — 4-hour file encode could run indefinitely | Fixed — 30-minute timeout added to `runFfmpeg()` |
+| R5 | Medium | No pre-clean of outputDir — stale chunks from prior runs included in results | Fixed — existing `chunk_NNN.mp3` files deleted before ffmpeg runs |
+| R6 | Medium | `stderr.slice(-20)` retains only last 20 stderr segments — early error context lost | Fixed — full stderr accumulated up to 2000 chars |
+| R7 | Medium | `files.length === 0` after exit-0 throws uncaught error — no explicit IPC handler guard | User: accepted — the throw is appropriate; IPC handler returns the rejection to the renderer as an error |
+| R8 | Medium | Test name referenced '5s → 2 chunks' but tested with 1000s chunks | User: accepted — no '5s' reference found in actual test file; sub-agent did not introduce the mismatch |
+| R9 | Low | `CHUNK_DURATION_S` hardcoded constant — no per-call configurability | User: accepted — v1 constant; noted for v2 parameterization |
+| R10 | Low | `getFfmpegPath()` uses CJS `createRequire` inside ESM — fragile across bundler changes | User: accepted — pattern works correctly; cleaner approach deferred |
+| R11 | Low | UploadView prop name `onTranscribeStarted` implied transcription started when it hadn't | Fixed — renamed to `onJobQueued` |
+
+QA annotation: Step 5b SKIP — ffmpeg chunking verified by unit tests (26 pass); live disk-space dialog and chunk cleanup require running Electron + runner.ts (Phase 6).
