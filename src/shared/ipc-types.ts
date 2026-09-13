@@ -146,6 +146,30 @@ export interface IpcChannels {
     };
     response: ChunkResult;
   };
+
+  // Transcription channels (Phase 6)
+  'transcription:start-job': {
+    request: {
+      jobId: string;
+      title: string;
+      audioPath: string;
+      provider: ProviderName;
+      model: string;
+      language: 'fr' | 'en' | 'auto';
+      durationS?: number;
+    };
+    response: void;
+  };
+  'transcription:cancel-job': {
+    request: void;
+    response: void;
+  };
+  'transcription:get-progress': {
+    request: { jobId: string };
+    response: { status: string; jobId: string };
+  };
+  // Push event (main → renderer): 'transcription:progress'
+  // Sent via mainWindow.webContents.send('transcription:progress', { jobId, status }).
 }
 
 // Push event (main → renderer): NOT an invoke channel.
