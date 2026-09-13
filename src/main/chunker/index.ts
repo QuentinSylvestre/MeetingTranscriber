@@ -6,18 +6,20 @@ import type { ProviderName, ChunkResult } from '../../shared/ipc-types';
 
 // ffmpeg-static resolves to the ffmpeg.exe path.
 // In production (installed app), it is in process.resourcesPath.
-// In dev, it's in node_modules/ffmpeg-static.
+// In dev/test, it's in node_modules/ffmpeg-static.
 function getFfmpegPath(): string {
-  // In production, the binary is in extraResources (process.resourcesPath)
-  if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
-    // process.resourcesPath only exists in the Electron runtime
-    if (typeof process !== 'undefined' && 'resourcesPath' in process) {
-      const prodPath = path.join(
-        (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? '',
-        'ffmpeg.exe'
-      );
-      if (fs.existsSync(prodPath)) return prodPath;
-    }
+  // F3: Check process.resourcesPath directly — it is only defined inside a running Electron app.
+  // The old check (NODE_ENV !== 'development' && !== 'test') incorrectly routed test runs to
+  // the production path, causing test failures when resourcesPath is undefined.
+  if (
+    typeof (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath === 'string' &&
+    (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath!.length > 0
+  ) {
+    const prodPath = path.join(
+      (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath!,
+      'ffmpeg.exe'
+    );
+    if (fs.existsSync(prodPath)) return prodPath;
   }
   // Dev/test fallback: use the node_modules package
   try {
@@ -83,6 +85,13 @@ export async function chunkAudio(
 
   fs.mkdirSync(outputDir, { recursive: true });
 
+  // F5: Pre-clean — remove stale chunk files from any prior run to prevent
+  // a failed re-run from returning a mix of old and new chunks.
+  const staleChunks = fs.readdirSync(outputDir).filter(f => /^chunk_\d+\.mp3$/.test(f));
+  for (const f of staleChunks) {
+    fs.unlinkSync(path.join(outputDir, f));
+  }
+
   const outputPattern = path.join(outputDir, 'chunk_%03d.mp3');
   const ffmpegPath = getFfmpegPath();
 
@@ -120,26 +129,36 @@ export async function chunkAudio(
   return { paths: files, chunkDurationMs: CHUNK_DURATION_MS };
 }
 
-function runFfmpeg(ffmpegPath: string, args: string[]): Promise<void> {
+// F4: Added timeout (default 30 min) to prevent runFfmpeg from hanging indefinitely.
+// F6: Collect full stderr up to 2000 chars instead of just the last 20 lines.
+function runFfmpeg(ffmpegPath: string, args: string[], timeoutMs = 30 * 60 * 1000): Promise<void> {
   return new Promise((resolve, reject) => {
     // shell: false — args passed as array, no shell injection possible
     const proc = spawn(ffmpegPath, args, { shell: false });
     const stderr: string[] = [];
+
+    const timeout = setTimeout(() => {
+      proc.kill();
+      reject(new Error('ffmpeg timed out after 30 minutes'));
+    }, timeoutMs);
 
     proc.stderr.on('data', (data: Buffer) => {
       stderr.push(data.toString());
     });
 
     proc.on('close', (code) => {
+      clearTimeout(timeout);
       if (code === 0) {
         resolve();
       } else {
-        const errMsg = stderr.slice(-20).join('');
+        // F6: full stderr truncated to last 2000 chars
+        const errMsg = stderr.join('').slice(-2000);
         reject(new Error(`ffmpeg exited with code ${code}: ${errMsg}`));
       }
     });
 
     proc.on('error', (err) => {
+      clearTimeout(timeout);
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
   });

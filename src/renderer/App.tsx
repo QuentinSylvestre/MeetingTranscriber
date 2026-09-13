@@ -64,7 +64,7 @@ export default function App(): React.ReactElement {
           <RecordView onJobStopped={handleJobStopped} />
         )}
         {currentView === 'upload' && (
-          <UploadView onTranscribeStarted={(jobId) => { setActiveJobId(jobId); }} />
+          <UploadView onJobQueued={(jobId) => { setActiveJobId(jobId); }} />
         )}
         {currentView !== 'settings' && currentView !== 'record' && currentView !== 'upload' && (
           <>

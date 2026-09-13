@@ -13,10 +13,10 @@ interface UploadFormState {
 }
 
 interface UploadViewProps {
-  onTranscribeStarted?: (jobId: string) => void;
+  onJobQueued?: (jobId: string) => void;
 }
 
-export default function UploadView({ onTranscribeStarted }: UploadViewProps): React.ReactElement {
+export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<UploadFormState>({
     file: null,
@@ -53,7 +53,7 @@ export default function UploadView({ onTranscribeStarted }: UploadViewProps): Re
       return;
     }
     const jobId = `job-${Date.now()}`;
-    onTranscribeStarted?.(jobId);
+    onJobQueued?.(jobId);
   };
 
   const selectStyle: React.CSSProperties = {
