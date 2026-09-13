@@ -1,7 +1,7 @@
 appId: com.meetingtranscriber.app
 productName: Meeting Transcriber
 directories:
-  output: dist
+  output: dist-installer
   buildResources: build
 
 files:
@@ -11,7 +11,6 @@ files:
 
 asar: true
 asarUnpack:
-  - node_modules/naudiodon/**
   - node_modules/better-sqlite3/**
 
 extraResources:

@@ -9,14 +9,18 @@ A Windows desktop application for transcribing meeting recordings with speaker d
 
 ## Installation
 
-Download and run the NSIS installer from the `dist/` directory after building.
+Download and run the NSIS installer from the `dist-installer/` directory after building.
 
 ```
 npm install
 npm run build
 ```
 
-The installer will be created at `dist/Meeting Transcriber Setup <version>.exe`.
+The installer will be created at `dist-installer/Meeting Transcriber Setup <version>.exe`.
+
+> **Note**: This is an unsigned build. Windows SmartScreen may display a warning when running the installer. Click "More info" then "Run anyway" to proceed. Production deployment should use a code-signing certificate.
+
+> **Note**: `npm run build` rebuilds native addons for the Electron target. If native modules fail to load, run `node scripts/rebuild-native.cjs` manually.
 
 ## Setting up API Keys
 
@@ -27,7 +31,7 @@ The app supports four transcription providers. You need an API key for at least 
    - **AssemblyAI** — Sign up at [assemblyai.com](https://assemblyai.com). Strong French transcription with speaker diarization.
    - **ElevenLabs Scribe v2** — Sign up at [elevenlabs.io](https://elevenlabs.io). Supports long recordings up to 10 hours.
    - **OpenAI gpt-4o-transcribe-diarize** — Sign up at [platform.openai.com](https://platform.openai.com). Requires audio chunking for recordings over 25 minutes.
-   - **Google Gemini 3.5 Transcribe** — Sign up at [aistudio.google.com](https://aistudio.google.com). 30-minute limit per chunk with diarization.
+   - **Google Gemini 3.5 Transcribe** (preview API) — Sign up at [aistudio.google.com](https://aistudio.google.com). 30-minute limit per chunk with diarization.
 3. Click **Test** to verify your API key works.
 4. API keys are stored encrypted using Windows Credential Manager (DPAPI).
 

@@ -9,7 +9,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc && electron-builder",
+    "build": "tsc --noEmit && electron-builder",
     "preview": "electron .",
     "test": "npm rebuild better-sqlite3 --prefer-offline && vitest run",
     "postinstall": "node scripts/rebuild-native.cjs"

@@ -29,11 +29,20 @@ if (!fs.existsSync(pngPath)) {
 }
 
 if (!fs.existsSync(icoPath)) {
-  // Copy PNG as placeholder ICO.
-  // electron-builder accepts a PNG for win.icon; the ICO is used by NSIS for the installer.
-  // Replace with a real multi-resolution ICO before distribution.
-  fs.copyFileSync(pngPath, icoPath);
-  console.log('Created icon.ico (placeholder PNG copy — replace before distribution)');
+  // Generate a proper ICO file using ffmpeg-static.
+  // ffmpeg can write .ico directly from a PNG source on Windows.
+  const ffmpegStatic = require('ffmpeg-static');
+  const ffmpegPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.default;
+  try {
+    execSync(
+      `"${ffmpegPath}" -i "${pngPath}" -y "${icoPath}"`,
+      { stdio: 'pipe' }
+    );
+    console.log('Created icon.ico (ICO generated from PNG via ffmpeg)');
+  } catch (e) {
+    console.error('Failed to create icon.ico via ffmpeg:', e.message);
+    process.exit(1);
+  }
 } else {
   console.log('icon.ico already exists, skipping');
 }
