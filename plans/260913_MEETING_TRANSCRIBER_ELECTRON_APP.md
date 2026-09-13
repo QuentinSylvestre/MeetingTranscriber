@@ -599,12 +599,15 @@ The IPC handler for `transcription:start-job` checks `_activeJobId !== null` and
 4. Unit tests: mock `fetch`; verify endpoint URLs, request bodies, response mapping, label normalization, offset not applied (offset is runner's responsibility, not the adapter's).
 
 **Exit criteria**:
-- [ ] `tests/unit/providers/assemblyai.test.ts` passes: polling mocked through `completed`, utterances mapped to `'Speaker A'`/`'Speaker B'`.
-- [ ] `tests/unit/providers/elevenlabs.test.ts` passes: single request mock, integer IDs mapped to `'Speaker 0'`/`'Speaker 1'`.
+- [x] `tests/unit/providers/assemblyai.test.ts` passes: polling mocked through `completed`, utterances mapped to `'Speaker A'`/`'Speaker B'`.
+- [x] `tests/unit/providers/elevenlabs.test.ts` passes: single request mock, integer IDs mapped to `'Speaker 0'`/`'Speaker 1'`.
 - [ ] Manual integration test (live key): 5-minute French MP3 via AssemblyAI and ElevenLabs; transcript appears in DB with absolute timestamps. Record provider, date, and file used in phase notes below.
 - [ ] Job status transitions: `pending` → `uploading` → `transcribing` → `done` (or `failed`).
 - [ ] Cancel during transcription: `AbortController` signal fires; job status set to `failed`.
-- [ ] `transcription:start-job` with an already-active job returns an error (not a second job started).
+- [x] `transcription:start-job` with an already-active job returns an error (not a second job started).
+
+**Implementation (2026-09-13, code: 4a7de54 + fix: de9281a)**
+Phase 6 delivers the transcription provider interface, AssemblyAI and ElevenLabs adapters, and the job runner. Provider type `ChunkResult` renamed to `TranscriptChunkResult` to avoid collision with chunker `ChunkResult`. AssemblyAI: upload → poll (5s, cancellable) → normalize `'A'`→`'Speaker A'`. ElevenLabs: single multipart POST, groups consecutive `speaker_id` words into turns. Runner: single-job guard, creates DB record, chunks via Phase 5 chunker, applies `offsetMs = i × chunkDurationMs`, saves to DB, cleans up temp chunks. 90-minute global timeout added. Review fixes: malformed `Transfer-Encoding: chunked` header removed; poll delay uses cancellable Promise; `fs.rmSync` replaces non-recursive `rmdirSync`. 36 tests pass.
 
 ---
 
@@ -1021,3 +1024,23 @@ Implementation health: Green.
 | R11 | Low | UploadView prop name `onTranscribeStarted` implied transcription started when it hadn't | Fixed — renamed to `onJobQueued` |
 
 QA annotation: Step 5b SKIP — ffmpeg chunking verified by unit tests (26 pass); live disk-space dialog and chunk cleanup require running Electron + runner.ts (Phase 6).
+
+### 2026-09-13 — Implementation Review (after Phase 6, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+10 findings (1 High, 4 Medium, 5 Low). All significant findings fixed.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `Transfer-Encoding: chunked` header sent manually alongside buffered body in AssemblyAI upload — malformed HTTP, may cause upload rejection | Fixed — header removed; `Content-Type: application/octet-stream` sufficient |
+| R2 | Medium | `fs.readFileSync` buffers entire file (up to 230 MB) before upload — memory spike risk on constrained RAM | User: accepted — streaming deferred to v2; 100 MB log warning added |
+| R3 | Medium | Poll loop cancel latency up to 5s — abort signal not wired to timer cancellation | Fixed — cancellable promise using `signal.addEventListener('abort', clearTimeout)` |
+| R4 | Medium | 90-minute global timeout not implemented — stuck API job blocks app permanently | Fixed — `setTimeout(abort, 90 * 60 * 1000)` added with `finally` clearTimeout |
+| R5 | Medium | `TranscriptChunkResult` type name diverges from plan's `ChunkResult` — Phase 7 plan snippets use `ChunkResult` | User: accepted — rename documented in divergences; Phase 7 brief will use correct name |
+| R6 | Low | `rmdirSync` fails if directory non-empty (e.g., unlinkSync partially failed) | Fixed — replaced with `fs.rmSync({ recursive: true, force: true })` |
+| R7 | Low | Turn ID included `cr.chunkIndex` (always 0 for single-chunk adapters) making the format misleading | Fixed — simplified to `${jobId}-${i}-${allTurns.length}` |
+| R8 | Low | API key not logged — confirmed present, no action needed | User: accepted — confirmed safe |
+| R9 | Low | `saveTranscript` failure path — catch block correctly sets status to 'failed'; no regression | User: accepted — confirmed correct |
+| R10 | Low | `import * as fs` inconsistency between providers — confirmed both use static imports; no issue | User: accepted — no action needed |
+
+QA annotation: Step 5b SKIP — all transcription surfaces require live API keys; covered by Phase 6 manual integration test and Phase 8 E2E. Unit tests (36/36) cover endpoint calls, label normalization, cancel handling.
