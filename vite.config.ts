@@ -7,8 +7,16 @@ export default defineConfig({
     react(),
     electron({
       main: {
-        // Array of entries — index.ts is the app entry; encoder.ts is the Worker.
         entry: ['src/main/index.ts', 'src/main/recorder/encoder.ts'],
+        vite: {
+          build: {
+            rollupOptions: {
+              output: {
+                format: 'cjs',
+              },
+            },
+          },
+        },
       },
       preload: {
         input: 'src/preload/index.ts',
