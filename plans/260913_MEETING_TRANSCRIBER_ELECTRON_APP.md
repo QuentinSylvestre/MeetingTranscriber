@@ -347,8 +347,11 @@ CREATE TABLE IF NOT EXISTS speaker_mappings (
 
 **Exit criteria**:
 - [ ] `db.sqlite` created in `userData` on first launch; migration applied once (re-run is idempotent due to `CREATE TABLE IF NOT EXISTS`).
-- [ ] `tests/unit/db.test.ts` passes: full CRUD round-trip; batch insert of 1000 turns completes in < 50 ms; cascade delete verified.
-- [ ] Grep `src/main/db/` for `${` (JS template interpolation in SQL) returns no hits.
+- [x] `tests/unit/db.test.ts` passes: full CRUD round-trip; batch insert of 1000 turns completes in < 50 ms; cascade delete verified.
+- [x] Grep `src/main/db/` for `${` (JS template interpolation in SQL) returns no hits.
+
+**Implementation (2026-09-13, code: 5cc21bd + fix: a7f6a46)**
+Phase 3 delivers the SQLite persistence layer. `db/index.ts` opens `userData/db.sqlite` with `better-sqlite3`, enables WAL mode and foreign keys, and applies a single inline migration (`MIGRATION_001` constant). Migration is wrapped in a transaction for atomicity; schema uses `CREATE TABLE IF NOT EXISTS` making re-runs idempotent. `jobs.ts` provides createJob/updateJobStatus/getJob/listJobs/deleteJob; `transcript.ts` provides saveTranscript (batched transaction), getTranscript, updateSpeakerMapping (upsert via `ON CONFLICT ... DO UPDATE`), getSpeakerMappings. `idx_transcript_turns_job_id` index prevents full-table scans on getTranscript. All 9 db IPC handlers registered in `ipc/db.ts`; `initDb()` called at app startup, `closeDb()` on `before-quit`. `npm test` script rebuilds `better-sqlite3` for Node ABI before Vitest (was rebuilt for Electron ABI by postinstall). 16 tests pass.
 
 ---
 
@@ -846,6 +849,8 @@ The protocol supports HTTP range requests by delegating to `protocol.registerFil
 | 1 | `electron-builder.yml` `files` array: `node_modules/**/*` removed; `dist-main/**/*` replaced with `dist-electron/**/*` | Review finding: bundling `node_modules` produces unusable 500 MB+ installer; dist path must match vite-plugin-electron output. |
 | 1 | `tsconfig.node.json` gained `rootDir: "src"`, `outDir` updated to `dist-electron`, `scripts/**/*` removed from `include` | Review finding: missing `rootDir` caused unpredictable TypeScript output paths; `scripts/` should not be compiled into the main process bundle. |
 | 2 | `store.ts` uses top-level `import { safeStorage } from 'electron'` instead of `require('electron')` inside each function body | `vi.mock('electron')` in Vitest only intercepts ESM static imports, not `require()` inside function bodies. The plan noted the `require()` form as acceptable if circular import is not a concern; in practice the static import is required for test isolation. |
+| 3 | Migration SQL inlined in `db/index.ts` constant instead of read from `migrations/` directory at runtime | vite-plugin-electron does not copy `src/main/db/migrations/` to `dist-electron/`; runtime `fs.readdir` of `__dirname + '/migrations'` would find an empty directory in production. Inlining guarantees the schema is always available. `001_initial.sql` file retained as documentation. |
+| 3 | `package.json` `test` script rebuilds `better-sqlite3` for Node before running Vitest | `postinstall` rebuilds native addons for Electron ABI; Vitest runs under plain Node. Without a pretest rebuild, tests fail with `NODE_MODULE_VERSION mismatch`. |
 
 ## Follow-up Work (Deferred)
 
@@ -946,3 +951,22 @@ Implementation health: Green.
 | R20 | Low | `safeStorage` top-level import instead of `require()` per brief — divergence not in plan | Fixed in plan — divergence recorded in § 9 Implementation Divergences |
 
 QA annotation: Step 5b SKIP — safeStorage, IPC, and SettingsView require live Electron with real API keys; covered by Phase 8 E2E and Phase 10 smoke test. Unit tests (10/10) cover in-process logic.
+
+### 2026-09-13 — Implementation Review (after Phase 3, persona: Security auditor, Senior engineer, Reliability engineer, Maintainability reviewer)
+
+Implementation health: Green.
+9 findings across 2 review cycles (5 High cycle-1; cycle-2 clean after 4 auto-fixes).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | High | `runMigrations` reads SQL files via `__dirname` — migrations directory not copied to `dist-electron` in production build; schema never applied | Fixed — migration SQL inlined as `MIGRATION_001` constant; file-based approach eliminated |
+| R2 | High | Migration `db.exec()` not transactional — partial DDL failure leaves broken schema | Fixed — migration wrapped in `db.transaction()` for atomic rollback |
+| R3 | High | WAL pragma in migration SQL redundant with `initDb()` pragma call — not a bug but confusing | User: accepted — redundancy harmless; `CREATE TABLE IF NOT EXISTS` idempotency makes it a non-issue |
+| R4 | High | No migration version tracking — safe for v1 with pure DDL `IF NOT EXISTS`, but a DML migration added later would re-run and corrupt data | User: accepted — v1 uses only `IF NOT EXISTS` DDL; noted for v2 in Follow-up Work |
+| R5 | High | User-controlled fields (`display_name`, `speaker_label`) stored without length/content validation | User: accepted — all SQL uses parameterized queries (no injection risk); content constraints are out of scope for v1 |
+| R6 | Medium | `better-sqlite3` rebuilt for Electron ABI by postinstall; `npm test` ran under Node ABI — tests fail with version mismatch | Fixed — `npm test` now runs `npm rebuild better-sqlite3 --prefer-offline` before Vitest |
+| R7 | Medium | No index on `transcript_turns(job_id)` — full table scan on `getTranscript` for a 4-hour meeting | Fixed — `CREATE INDEX IF NOT EXISTS idx_transcript_turns_job_id` added to migration |
+| R8 | Medium | `db.prepare()` called on every function invocation — prepared statements not cached | User: accepted — v1 processes one job at a time; performance acceptable; noted for v2 |
+| R9 | Low | `SELECT *` throughout — schema drift invisible at TypeScript level | User: accepted — TypeScript cast types provide compile-time safety; explicit columns deferred |
+
+QA annotation: Step 5b SKIP — `db.sqlite` creation on first launch requires live Electron; covered by Phase 10 smoke test. Unit tests (16/16 pass) cover CRUD, batch perf, cascade, upsert.
