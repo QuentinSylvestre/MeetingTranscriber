@@ -23,12 +23,15 @@ export class AssemblyAIProvider implements TranscriptionProvider {
 
     // 1. Upload file
     const fileBuffer = fs.readFileSync(filePath);
+    const fileSizeMb = Math.round(fileBuffer.length / 1024 / 1024);
+    if (fileSizeMb > 100) {
+      log.warn(`AssemblyAI: loading ${fileSizeMb} MB into memory for upload. Consider streaming for large files in a future version.`);
+    }
     const uploadResp = await fetch(`${BASE_URL}/v2/upload`, {
       method: 'POST',
       headers: {
         Authorization: this.apiKey,
         'Content-Type': 'application/octet-stream',
-        'Transfer-Encoding': 'chunked',
       },
       body: fileBuffer,
       signal,
@@ -58,7 +61,10 @@ export class AssemblyAIProvider implements TranscriptionProvider {
 
     // 3. Poll until complete
     while (!signal.aborted) {
-      await new Promise(r => setTimeout(r, this.pollIntervalMs));
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, this.pollIntervalMs);
+        signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
       if (signal.aborted) break;
 
       const pollResp = await fetch(`${BASE_URL}/v2/transcript/${transcriptId}`, {

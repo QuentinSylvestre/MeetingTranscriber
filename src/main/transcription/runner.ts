@@ -40,6 +40,12 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
   _abortController = new AbortController();
   const { signal } = _abortController;
 
+  // 90-minute global timeout (plan requirement)
+  const jobTimeout = setTimeout(() => {
+    log.warn(`Job ${jobId} exceeded 90-minute timeout, aborting`);
+    _abortController?.abort();
+  }, 90 * 60 * 1000);
+
   // Create DB job record
   createJob({
     id: jobId,
@@ -105,7 +111,7 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
       for (const cr of chunkResults) {
         for (const turn of cr.turns) {
           allTurns.push({
-            id: `${jobId}-${i}-${cr.chunkIndex}-${allTurns.length}`,
+            id: `${jobId}-${i}-${allTurns.length}`, // Format: jobId-chunkIndex-turnIndex
             job_id: jobId,
             chunk_index: i,
             speaker_label: turn.speakerLabel,
@@ -144,9 +150,14 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
     try {
       const recordingsFolder = getPreference('recordingsFolder');
       const chunkDir = path.join(recordingsFolder, '.chunks', jobId);
-      fs.rmdirSync(chunkDir);
-    } catch { /* ignore if not empty or doesn't exist */ }
+      try {
+        fs.rmSync(chunkDir, { recursive: true, force: true });
+      } catch (e) {
+        log.warn(`Failed to remove temp chunk dir ${chunkDir}:`, e);
+      }
+    } catch { /* ignore if recordingsFolder unavailable */ }
 
+    clearTimeout(jobTimeout);
     _activeJobId = null;
     _abortController = null;
   }
