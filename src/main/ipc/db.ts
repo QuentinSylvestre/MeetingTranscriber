@@ -28,6 +28,10 @@ export function registerDbHandlers(): void {
     jobs.deleteJob(id);
   });
 
+  ipcMain.handle('db:update-job-title', (_event, { id, title }: { id: string; title: string }) => {
+    jobs.updateJobTitle(id, title);
+  });
+
   ipcMain.handle('db:save-transcript', (_event, { turns }) => {
     transcript.saveTranscript(turns);
   });

@@ -126,6 +126,33 @@ describe.skipIf(!Database)('jobs CRUD', () => {
     expect(getTranscript('job-cascade')).toHaveLength(0);
     expect(getSpeakerMappings('job-cascade')).toHaveLength(0);
   });
+
+  it('updateJobTitle updates the title in the database', async () => {
+    const { createJob, getJob, updateJobTitle } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-title',
+      title: 'Original Title',
+      created_at: Date.now(),
+      audio_path: '/tmp/title-test.mp3',
+      duration_s: null,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+
+    updateJobTitle('job-title', 'Updated Title');
+
+    const job = getJob('job-title');
+    expect(job?.title).toBe('Updated Title');
+  });
+
+  it('updateJobTitle on nonexistent id runs without throwing', async () => {
+    const { updateJobTitle } = await import('../../src/main/db/jobs');
+    expect(() => updateJobTitle('nonexistent-id', 'x')).not.toThrow();
+  });
 });
 
 describe.skipIf(!Database)('transcript CRUD', () => {

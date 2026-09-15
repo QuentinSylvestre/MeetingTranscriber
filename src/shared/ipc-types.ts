@@ -103,6 +103,10 @@ export interface IpcChannels {
     request: { id: string };
     response: void;
   };
+  'db:update-job-title': {
+    request: { id: string; title: string };
+    response: void;
+  };
   'db:save-transcript': {
     request: { turns: TranscriptTurn[] };
     response: void;

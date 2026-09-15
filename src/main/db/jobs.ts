@@ -40,3 +40,8 @@ export function deleteJob(id: string): void {
   // Cascade deletes transcript_turns and speaker_mappings via FK constraint
   db.prepare('DELETE FROM jobs WHERE id = ?').run(id);
 }
+
+export function updateJobTitle(id: string, title: string): void {
+  const db = getDb();
+  db.prepare('UPDATE jobs SET title = ? WHERE id = ?').run(title, id);
+}
