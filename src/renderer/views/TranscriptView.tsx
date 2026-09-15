@@ -32,6 +32,7 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
     setTimeout(() => titleInputRef.current?.focus(), 0);
   };
   const commitTitleEdit = async () => {
+    if (!editingTitle) return; // guard against double-fire (Enter → blur)
     setEditingTitle(false);
     const trimmed = titleDraft.trim();
     if (trimmed && trimmed !== jobTitle) {
