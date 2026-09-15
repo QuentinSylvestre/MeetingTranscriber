@@ -43,5 +43,5 @@ export function deleteJob(id: string): void {
 
 export function updateJobTitle(id: string, title: string): void {
   const db = getDb();
-  db.prepare('UPDATE jobs SET title = ? WHERE id = ?').run(title, id);
+  db.prepare('UPDATE jobs SET title = @title WHERE id = @id').run({ title, id });
 }

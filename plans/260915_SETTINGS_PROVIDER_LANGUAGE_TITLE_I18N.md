@@ -226,11 +226,15 @@ Extended `PreferenceKey` union and `Preferences` interface with `defaultProvider
    Follow the existing test's in-memory DB setup pattern — `db.test.ts` uses the `001_initial.sql` disk file to seed the schema.
 
 **Exit criteria**:
-- [ ] `npm test` passes with no failures in `db.test.ts`
-- [ ] `updateJobTitle('nonexistent-id', 'x')` runs without throwing (SQLite UPDATE on missing row is a no-op)
-- [ ] TypeScript compiles cleanly
+- [x] `npm test` passes with no failures in `db.test.ts`
+- [x] `updateJobTitle('nonexistent-id', 'x')` runs without throwing (SQLite UPDATE on missing row is a no-op)
+- [x] TypeScript compiles cleanly
 
 ---
+
+
+#### Implementation (2026-09-15, code: 457f088)
+Added `'db:update-job-title'` to `IpcChannels` with `{id, title}` request and `void` response. Added `updateJobTitle(id, title)` to `src/main/db/jobs.ts` using named `@param` binding consistent with the file's existing style. Registered the `ipcMain.handle('db:update-job-title', ...)` handler in `db.ts`. Added two tests to `db.test.ts`: one verifying title update persists, one verifying no-throw on nonexistent id. Auto-fix applied (F1): switched from positional `?` to named `@title`/`@id` binding. 78/78 tests pass.
 
 ### Phase 3: SettingsView — preferences UI [QA] [P:4]
 
@@ -1005,6 +1009,20 @@ Manual checklist:
 *None at plan creation.*
 
 ## Review Log
+
+### 2026-09-15 — Implementation Review (after Phase 2, persona: Senior engineer, Reliability engineer)
+
+Implementation health: Green.
+4 findings (0 High, 0 Medium, 4 Low).
+QA verification: SKIP — Phase 2 adds a DB function and IPC handler with no independently-exercisable UI surface; unit tests (78/78 pass) cover the functional change.
+Cycle 2 skipped — all findings Low; F1 auto-fix (named SQL binding) is purely mechanical.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | Low | `updateJobTitle` used positional `?` binding while every other function in `jobs.ts` uses named `@param` — inconsistent style | Fixed — switched to `@title`/`@id` named binding |
+| R2 | Low | No input validation on `title` in IPC handler or DB function — empty string `""` accepted | User: accepted — NOT NULL constraint satisfied; no validation specified in plan; follow-up if needed |
+| R3 | Low | No-op test asserts no-throw but not zero rows affected — a bad statement mutation would still pass | User: accepted — test validates observable behavior contract; zero-rows assertion would require rows_changed introspection not done elsewhere |
+| R4 | Low | Test job not cleaned up; shared in-memory DB state; consistent with existing pattern | User: accepted — matches existing test infrastructure pattern |
 
 ### 2026-09-15 — Implementation Review (after Phase 1, persona: Senior engineer, Maintainability reviewer)
 
