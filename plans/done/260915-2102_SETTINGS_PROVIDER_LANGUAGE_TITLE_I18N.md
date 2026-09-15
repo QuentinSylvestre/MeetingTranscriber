@@ -2,8 +2,21 @@
 
 > **Date**: 2026-09-15
 > **Status**: Complete
+> **Last Updated**: 2026-09-15 18:15
 > **Scope**: 4 features — provider global setting, default language preference, post-transcription title editing, FR/EN UI language
 > **Estimated effort**: 1–2 days
+
+## Completion Summary
+
+6 phases implemented and reviewed in one session. All 5 success criteria met. 78/78 unit tests pass throughout. Final review (Senior engineer + Reliability engineer + Architect) found 4 Medium findings — all fixed. Plan health: Green.
+
+Commits: `a40c3f6` (phase 1) → `457f088` (phase 2) → `04d4376` (phase 3) → `e629536` (phase 4) → `57285e9` (phase 5) → `a0113d3` (phase 6) + fix commits `6370e51`, `9064ddd`, `0f100b1`, `a09c80b`, `85ec5f7`, `1be509c`.
+
+### Acknowledged at archival
+
+- Accepted — Step 9b QA: BLOCKED — Electron app requires GUI environment; all unit tests pass; runtime surfaces require manual verification per plan § 7 Verification checklist. Test audio `test_60s.mp3` available for upload flow at `C:\path\to\test_60s.mp3` (10-run budget unused).
+- Accepted — Low: pre-existing `on`/`off` TS type conflict in `window.electronAPI` declarations (`useSettings.ts` vs `useRecorder.ts`) — present before this plan, out of scope.
+- Accepted — Low: Dev debug `audio src:` overlay in `TranscriptView.tsx` (`NODE_ENV === 'development'` gated, production-safe) — pre-existing audio URL fix bundled in same commit.
 
 ---
 
