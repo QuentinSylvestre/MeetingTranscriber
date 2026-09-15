@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import AudioPlayer, { type AudioPlayerRef } from '../components/AudioPlayer';
 import SpeakerTurnItem from '../components/SpeakerTurnItem';
 import { useTranscript } from '../hooks/useTranscript';
+import { useI18n } from '../hooks/useI18n';
 import type { Job, TranscriptTurn } from '../../shared/ipc-types';
 
 interface Props { jobId: string; audioPath: string; }
 
 export default function TranscriptView({ jobId, audioPath }: Props): React.ReactElement {
+  const { t } = useI18n();
   const { turns, loading, error, renameSpeaker, getDisplayName } = useTranscript(jobId);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
 
@@ -55,12 +57,12 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
 
   const onSeek = useCallback((ms: number) => audioPlayerRef.current?.seekTo(ms), []);
 
-  if (loading) return <div style={{ color: 'var(--overlay1)', padding: 'var(--space-4)' }}>Loading…</div>;
+  if (loading) return <div style={{ color: 'var(--overlay1)', padding: 'var(--space-4)' }}>{t('transcript_loading')}</div>;
 
   const groups = new Map<number, TranscriptTurn[]>();
-  for (const t of turns) {
-    if (!groups.has(t.chunk_index)) groups.set(t.chunk_index, []);
-    groups.get(t.chunk_index)!.push(t);
+  for (const turn of turns) {
+    if (!groups.has(turn.chunk_index)) groups.set(turn.chunk_index, []);
+    groups.get(turn.chunk_index)!.push(turn);
   }
   const isChunked = groups.size > 1;
 
@@ -87,27 +89,27 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
             <div
               className="page-title"
               onDoubleClick={startTitleEdit}
-              title="Double-click to rename"
+              title={t('transcript_title_edit_hint')}
               style={{ cursor: 'text' }}
               role="button"
               tabIndex={0}
               onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && startTitleEdit()}
-              aria-label={`${jobTitle || 'Transcript'} — double-click to rename`}
+              aria-label={`${jobTitle || t('transcript_title_fallback')} — ${t('transcript_title_edit_hint')}`}
             >
-              {jobTitle || 'Transcript'}
+              {jobTitle || t('transcript_title_fallback')}
             </div>
           )}
           <div className="page-subtitle">
-            {turns.length} turn{turns.length !== 1 ? 's' : ''}
-            {isChunked ? ` · ${groups.size} chunks` : ''}
+            {turns.length} {turns.length !== 1 ? t('transcript_subtitle_turns_plural') : t('transcript_subtitle_turns')}
+            {isChunked ? ` · ${groups.size} ${t('transcript_subtitle_chunks')}` : ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
           <button className="btn btn-success btn-sm" onClick={() => void window.electronAPI.invoke('export:to-file', { jobId })}>
-            ⇩ Export .txt
+            {t('transcript_btn_export')}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => void window.electronAPI.invoke('export:to-clipboard', { jobId })}>
-            📋 Copy
+            {t('transcript_btn_copy')}
           </button>
         </div>
       </div>
@@ -127,7 +129,7 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
         {Array.from(groups.entries()).map(([chunkIdx, chunkTurns]) => (
           <React.Fragment key={chunkIdx}>
             {isChunked && (
-              <div className="chunk-separator">Chunk {chunkIdx + 1}</div>
+              <div className="chunk-separator">{t('transcript_chunk_label')} {chunkIdx + 1}</div>
             )}
             {chunkTurns.map(turn => (
               <SpeakerTurnItem
@@ -143,7 +145,7 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
 
         {turns.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--overlay0)', fontSize: 13 }}>
-            No transcript content — the recording may have been silent
+            {t('transcript_empty')}
           </div>
         )}
       </div>

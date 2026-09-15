@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useI18n } from '../hooks/useI18n';
 
 interface Props {
   jobId: string;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function JobProgressView({ jobId, onComplete, onCancel }: Props): React.ReactElement {
+  const { t } = useI18n();
   const [lines, setLines] = useState<string[]>(['Starting transcription…']);
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -16,6 +18,9 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
     const handler = (data: unknown) => {
       const { status } = data as { jobId: string; status: string };
       setLines(prev => [...prev.slice(-99), status]);
+      // NOTE: 'Done', 'Error:', 'Cancelled' are NOT translated — these strings are
+      // pattern-matched here to drive navigation. They come from runner.ts via IPC
+      // and must remain untranslated end-to-end.
       if (status === 'Done') { setDone(true); setTimeout(onComplete, 800); }
       else if (status.startsWith('Error:') || status === 'Cancelled') setFailed(true);
     };
@@ -35,9 +40,9 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Transcribing…</div>
+        <div className="page-title">{t('progress_title')}</div>
         <div className="page-subtitle">
-          {done ? 'Complete' : failed ? 'Failed' : 'Processing your recording'}
+          {done ? t('progress_subtitle_complete') : failed ? t('progress_subtitle_failed') : t('progress_subtitle_processing')}
         </div>
       </div>
 
@@ -50,7 +55,7 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
 
       {done && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-4)', color: 'var(--success)', fontSize: 14, fontWeight: 600 }}>
-          ✓ Transcription complete — opening transcript…
+          {t('progress_complete_msg')}
         </div>
       )}
 
@@ -71,7 +76,7 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
       {!done && (
         <div style={{ marginTop: 'var(--space-4)' }}>
           <button className="btn btn-ghost" onClick={handleCancel}>
-            Cancel transcription
+            {t('progress_btn_cancel')}
           </button>
         </div>
       )}

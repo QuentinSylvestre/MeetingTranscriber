@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useHistory } from '../hooks/useHistory';
+import { useI18n } from '../hooks/useI18n';
 import type { Job } from '../../shared/ipc-types';
 
 interface HistoryViewProps {
@@ -35,6 +36,7 @@ function formatDuration(s: number | null): string {
 }
 
 export default function HistoryView({ onOpenJob }: HistoryViewProps): React.ReactElement {
+  const { t } = useI18n();
   const { jobs, loading, error, deleteJob, renameJob } = useHistory();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,15 +63,17 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
 
   if (loading) return (
     <div style={{ color: 'var(--overlay1)', fontSize: 13, padding: 'var(--space-4)' }}>
-      Loading…
+      {t('history_loading')}
     </div>
   );
 
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">History</div>
-        <div className="page-subtitle">{jobs.length} transcription job{jobs.length !== 1 ? 's' : ''}</div>
+        <div className="page-title">{t('history_title')}</div>
+        <div className="page-subtitle">
+          {jobs.length} {jobs.length !== 1 ? t('history_subtitle_jobs_plural') : t('history_subtitle_jobs')}
+        </div>
       </div>
 
       {error && <p className="text-error text-sm mb-4">{error}</p>}
@@ -80,9 +84,9 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
           color: 'var(--overlay0)', fontSize: 14,
         }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
-          No transcription jobs yet
+          {t('history_empty')}
           <div style={{ fontSize: 12, marginTop: 4, color: 'var(--surface2)' }}>
-            Record or upload audio to get started
+            {t('history_empty_hint')}
           </div>
         </div>
       )}
@@ -123,12 +127,12 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
                 className="job-title"
                 onClick={e => e.stopPropagation()}
                 onDoubleClick={e => { e.stopPropagation(); startEdit(job); }}
-                title="Double-click to rename"
+                title={t('transcript_title_edit_hint')}
                 style={{ cursor: 'text' }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && startEdit(job)}
-                aria-label={`${job.title} — double-click to rename`}
+                aria-label={`${job.title} — ${t('transcript_title_edit_hint')}`}
               >
                 {job.title}
               </div>
@@ -157,7 +161,7 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             {job.status === 'done' && (
               <button className="btn btn-ghost btn-sm" onClick={() => onOpenJob(job)}>
-                Open
+                {t('history_btn_open')}
               </button>
             )}
             {confirmDelete === job.id ? (
@@ -166,10 +170,10 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
                   className="btn btn-danger btn-sm"
                   onClick={async () => { await deleteJob(job.id); setConfirmDelete(null); }}
                 >
-                  Delete
+                  {t('history_btn_delete')}
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>
-                  Cancel
+                  {t('history_btn_cancel')}
                 </button>
               </>
             ) : (
@@ -177,7 +181,7 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
                 className="btn btn-ghost btn-sm"
                 onClick={() => setConfirmDelete(job.id)}
                 disabled={job.status === 'uploading' || job.status === 'transcribing'}
-                title={(job.status === 'uploading' || job.status === 'transcribing') ? 'Cannot delete an active job' : undefined}
+                title={(job.status === 'uploading' || job.status === 'transcribing') ? t('history_delete_disabled_title') : undefined}
                 style={{ color: 'var(--overlay1)' }}
               >
                 ✕

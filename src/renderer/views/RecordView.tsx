@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
 import { useSettings } from '../hooks/useSettings';
+import { useI18n } from '../hooks/useI18n';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -17,6 +18,7 @@ function formatDuration(ms: number): string {
 }
 
 export default function RecordView({ onJobStarted }: RecordViewProps): React.ReactElement {
+  const { t } = useI18n();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<ProviderName>('assemblyai');
@@ -98,8 +100,8 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Record meeting</div>
-        <div className="page-subtitle">Capture audio from your microphone and transcribe</div>
+        <div className="page-title">{t('record_title')}</div>
+        <div className="page-subtitle">{t('record_subtitle')}</div>
       </div>
 
       {/* Timer */}
@@ -127,20 +129,20 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
               onClick={handleStart}
               disabled={!isIdle || !prefsLoaded}
             >
-              ⏺ Start Recording
+              {t('record_btn_start')}
             </button>
           </>
         )}
         {status === 'recording' && <>
-          <button className="btn btn-warning" onClick={pause}>⏸ Pause</button>
-          <button className="btn btn-danger" onClick={handleStop}>⏹ Stop &amp; Transcribe</button>
+          <button className="btn btn-warning" onClick={pause}>{t('record_btn_pause')}</button>
+          <button className="btn btn-danger" onClick={handleStop}>{t('record_btn_stop')}</button>
         </>}
         {status === 'paused' && <>
-          <button className="btn btn-success" onClick={resume}>▶ Resume</button>
-          <button className="btn btn-danger" onClick={handleStop}>⏹ Stop &amp; Transcribe</button>
+          <button className="btn btn-success" onClick={resume}>{t('record_btn_resume')}</button>
+          <button className="btn btn-danger" onClick={handleStop}>{t('record_btn_stop')}</button>
         </>}
         {status === 'stopping' && (
-          <span style={{ color: 'var(--warning)', fontSize: 13 }}>Finalizing…</span>
+          <span style={{ color: 'var(--warning)', fontSize: 13 }}>{t('record_finalizing')}</span>
         )}
       </div>
 
@@ -149,17 +151,17 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       {/* Config */}
       <div className="card" style={{ maxWidth: 520 }}>
         <div className="card-body">
-          <h3 style={{ marginBottom: 'var(--space-4)' }}>Recording settings</h3>
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('record_settings_heading')}</h3>
 
           <div className="form-group">
-            <label className="form-label">Microphone</label>
+            <label className="form-label">{t('record_microphone_label')}</label>
             <select
               className="form-select"
               value={selectedDevice}
               onChange={e => setSelectedDevice(e.target.value)}
               disabled={!isIdle}
             >
-              <option value="">Default microphone</option>
+              <option value="">{t('record_microphone_default')}</option>
               {devices.map(d => (
                 <option key={d.deviceId} value={d.deviceId}>
                   {d.label || `Device ${d.deviceId.substring(0,8)}`}
@@ -169,15 +171,15 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
           </div>
 
           <div className="form-group">
-            <label className="form-label">Language</label>
+            <label className="form-label">{t('record_language_label')}</label>
             <select
               className="form-select"
               value={selectedLanguage}
               onChange={e => setSelectedLanguage(e.target.value as 'fr'|'en'|'auto')}
               disabled={!isIdle}
             >
-              <option value="fr">French</option>
-              <option value="en">English</option>
+              <option value="fr">{t('lang_option_fr')}</option>
+              <option value="en">{t('lang_option_en')}</option>
             </select>
           </div>
 

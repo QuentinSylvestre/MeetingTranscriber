@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useI18n } from '../hooks/useI18n';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -16,6 +17,7 @@ interface SelectedFile {
 }
 
 export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<SelectedFile | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ProviderName>('assemblyai');
   const [language, setLanguage] = useState<'fr'|'en'|'auto'>('fr');
@@ -60,7 +62,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
     if (!srcPath) return; // cancelled
     const name = srcPath.split(/[\\/]/).pop() ?? srcPath;
     if (!validateExt(name)) {
-      setError(`Unsupported format. Accepted: ${ACCEPTED_EXTENSIONS.join(' ')}`);
+      setError(`${t('upload_error_format')} ${ACCEPTED_EXTENSIONS.join(' ')}`);
       return;
     }
     setError(null);
@@ -111,8 +113,8 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Upload audio</div>
-        <div className="page-subtitle">Transcribe an existing recording</div>
+        <div className="page-title">{t('upload_title')}</div>
+        <div className="page-subtitle">{t('upload_subtitle')}</div>
       </div>
 
       {/* Drop zone — click anywhere to open native file picker.
@@ -125,7 +127,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); void handleClick(); }}
         role="button" tabIndex={0}
-        aria-label="Click to browse for an audio file"
+        aria-label={t('upload_drop_text')}
         onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && void handleClick()}
       >
         {selected ? (
@@ -133,13 +135,13 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
             <div className="drop-icon">✅</div>
             <div className="drop-text">{selected.name}</div>
             <div className="drop-hint">
-              {selected.sizeMb > 0 ? `${selected.sizeMb.toFixed(1)} MB — ` : ''}click to change
+              {selected.sizeMb > 0 ? `${selected.sizeMb.toFixed(1)} MB — ` : ''}{t('upload_drop_hint_change')}
             </div>
           </>
         ) : (
           <>
             <div className="drop-icon">🎵</div>
-            <div className="drop-text">Click to browse for an audio file</div>
+            <div className="drop-text">{t('upload_drop_text')}</div>
             <div className="drop-hint">{ACCEPTED_EXTENSIONS.join('  ')}</div>
           </>
         )}
@@ -150,28 +152,28 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
       {/* Options */}
       <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
         <div className="card-body">
-          <h3 style={{ marginBottom: 'var(--space-4)' }}>Transcription settings</h3>
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('upload_settings_heading')}</h3>
 
           <div className="form-group">
-            <label className="form-label">Language</label>
+            <label className="form-label">{t('upload_language_label')}</label>
             <select
               className="form-select"
               value={language}
               onChange={e => setLanguage(e.target.value as 'fr'|'en'|'auto')}
             >
-              <option value="fr">French</option>
-              <option value="en">English</option>
+              <option value="fr">{t('lang_option_fr')}</option>
+              <option value="en">{t('lang_option_en')}</option>
             </select>
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Title (optional)</label>
+            <label className="form-label">{t('upload_title_label')}</label>
             <input
               className="form-input"
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="Auto-generated if blank"
+              placeholder={t('upload_title_placeholder')}
             />
           </div>
         </div>
@@ -188,7 +190,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         onClick={handleTranscribe}
         disabled={!selected || submitting || !prefsLoaded}
       >
-        {submitting ? '⏳ Starting…' : '▶ Transcribe'}
+        {submitting ? t('upload_btn_starting') : t('upload_btn_transcribe')}
       </button>
     </div>
   );
