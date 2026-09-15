@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { PROVIDER_NAMES, PROVIDER_LABELS } from '../../shared/ipc-types';
+import React, { useState, useEffect } from 'react';
+import { useSettings } from '../hooks/useSettings';
+import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
 const ACCEPTED_EXTENSIONS = ['.mp3', '.mp4', '.wav', '.m4a', '.ogg'];
@@ -16,12 +17,31 @@ interface SelectedFile {
 
 export default function UploadView({ onJobQueued }: UploadViewProps): React.ReactElement {
   const [selected, setSelected] = useState<SelectedFile | null>(null);
-  const [provider, setProvider] = useState<ProviderName>('assemblyai');
-  const [language, setLanguage] = useState<'fr'|'en'|'auto'>('auto');
+  const [selectedProvider, setSelectedProvider] = useState<ProviderName>('assemblyai');
+  const [language, setLanguage] = useState<'fr'|'en'|'auto'>('fr');
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [providerKeyMissing, setProviderKeyMissing] = useState(false);
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const { getPreference, hasSecret } = useSettings();
+
+  useEffect(() => {
+    Promise.all([
+      getPreference('defaultLanguage'),
+      getPreference('defaultProvider'),
+    ]).then(async ([lang, prov]) => {
+      const langVal = (lang === 'fr' || lang === 'en') ? lang as 'fr' | 'en' : 'fr';
+      const provVal = (PROVIDER_NAMES.includes(prov as ProviderName)) ? prov as ProviderName : 'assemblyai';
+      setLanguage(langVal);
+      setSelectedProvider(provVal);
+      const keyPresent = await hasSecret(SECRET_KEY_NAMES[provVal]);
+      setProviderKeyMissing(!keyPresent);
+      setPrefsLoaded(true);
+    }).catch(console.error);
+  }, []); // mount-only — getPreference/hasSecret are stable useCallbacks
 
   const validateExt = (name: string): boolean => {
     const ext = '.' + (name.split('.').pop() ?? '').toLowerCase();
@@ -46,6 +66,11 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
 
   const handleTranscribe = async () => {
     if (!selected) { setError('Please select an audio file.'); return; }
+    if (!prefsLoaded) return;
+    if (providerKeyMissing) {
+      setError(`No API key configured for ${PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.`);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -70,7 +95,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         jobId,
         title: title.trim() || selected.name.replace(/\.[^.]+$/, ''),
         audioPath: destPath,
-        provider,
+        provider: selectedProvider,
         model: 'default',
         language,
       });
@@ -124,21 +149,16 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         <div className="card-body">
           <h3 style={{ marginBottom: 'var(--space-4)' }}>Transcription settings</h3>
 
-          <div className="grid-2">
-            <div className="form-group">
-              <label className="form-label">Provider</label>
-              <select className="form-select" value={provider} onChange={e => setProvider(e.target.value as ProviderName)}>
-                {PROVIDER_NAMES.map(p => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Language</label>
-              <select className="form-select" value={language} onChange={e => setLanguage(e.target.value as 'fr'|'en'|'auto')}>
-                <option value="auto">Auto-detect</option>
-                <option value="fr">French</option>
-                <option value="en">English</option>
-              </select>
-            </div>
+          <div className="form-group">
+            <label className="form-label">Language</label>
+            <select
+              className="form-select"
+              value={language}
+              onChange={e => setLanguage(e.target.value as 'fr'|'en'|'auto')}
+            >
+              <option value="fr">French</option>
+              <option value="en">English</option>
+            </select>
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -154,10 +174,16 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         </div>
       </div>
 
+      {providerKeyMissing && (
+        <p className="text-error text-sm mb-4" role="alert">
+          No API key for {PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.
+        </p>
+      )}
+
       <button
-        className={`btn btn-primary btn-lg${(!selected || submitting) ? ' btn-disabled' : ''}`}
+        className={`btn btn-primary btn-lg${(!selected || submitting || !prefsLoaded) ? ' btn-disabled' : ''}`}
         onClick={handleTranscribe}
-        disabled={!selected || submitting}
+        disabled={!selected || submitting || !prefsLoaded}
       >
         {submitting ? '⏳ Starting…' : '▶ Transcribe'}
       </button>
