@@ -1,7 +1,7 @@
 # Settings: Provider, Language, Title Editing & UI Language
 
 > **Date**: 2026-09-15
-> **Status**: Draft
+> **Status**: In Progress
 > **Scope**: 4 features — provider global setting, default language preference, post-transcription title editing, FR/EN UI language
 > **Estimated effort**: 1–2 days
 
@@ -165,9 +165,13 @@ None. No new API calls or external services.
    ```
 
 **Exit criteria**:
-- [ ] `npm test` passes with no failures in `settings.test.ts`
-- [ ] TypeScript compiles cleanly (`npx tsc --noEmit`)
-- [ ] `DEFAULT_PREFERENCES` has all 4 keys; `Preferences` interface has all 4 fields
+- [x] `npm test` passes with no failures in `settings.test.ts`
+- [x] TypeScript compiles cleanly (`npx tsc --noEmit`)
+- [x] `DEFAULT_PREFERENCES` has all 4 keys; `Preferences` interface has all 4 fields
+
+
+#### Implementation (2026-09-15, code: a40c3f6)
+Extended `PreferenceKey` union and `Preferences` interface with `defaultProvider: ProviderName` and `appLanguage: 'fr' | 'en'`. Changed `DEFAULT_PREFERENCES.defaultLanguage` from `'auto'` to `'fr'`; added `defaultProvider: 'assemblyai'` and `appLanguage: 'fr'`. Restructured `settings:set-preference` validation into exhaustive if-else chain with catch-all rejecting unknown keys; added `PROVIDER_NAMES` import to `ipc/settings.ts`. Updated `settings.test.ts` assertion to `'fr'`; added `defaultProvider` and `appLanguage` assertions. 78/78 tests pass; no new TS errors in phase files.
 
 ---
 
@@ -1001,6 +1005,19 @@ Manual checklist:
 *None at plan creation.*
 
 ## Review Log
+
+### 2026-09-15 — Implementation Review (after Phase 1, persona: Senior engineer, Maintainability reviewer)
+
+Implementation health: Green.
+3 findings (0 High, 0 Medium, 3 Low).
+QA verification: SKIP — Phase 1 is types/store/IPC validation; no independently-exercisable runtime surface. Unit tests (78/78 pass) cover the functional change. QA annotation mismatch: consider removing [QA] in future plan revisions.
+Cycle 2 skipped — all findings Low, auto-fix for F1 purely mechanical cast normalization.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | Low | `appLanguage` validator uses redundant `as string[]` cast on the literal array; `defaultLanguage` omits it — minor inconsistency | User: accepted — cosmetic only, no behavioral impact; acceptable inconsistency per F2's documented tradeoff note |
+| R2 | Low | Catch-all key list in `ipc/settings.ts` must be kept in sync with `PreferenceKey` manually; TS does not enforce this | User: accepted — plan's documented tradeoff; implementation note requires all 3 changes together |
+| R3 | Low | No test covers new IPC validation paths for invalid `defaultProvider`/`appLanguage` values | User: accepted — store-layer tests cover happy path; IPC validation tests deferred to a follow-up |
 
 ### 2026-09-15 — Cycle 1 (via /qplan)
 
