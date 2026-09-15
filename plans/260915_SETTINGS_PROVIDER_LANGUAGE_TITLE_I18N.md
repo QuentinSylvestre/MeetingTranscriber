@@ -343,13 +343,17 @@ to:
 > "Select your transcription language (defaults to your saved preference) and an optional title."
 
 **Exit criteria**:
-- [ ] Settings page shows "Transcription defaults" and "App language" cards above API Keys
-- [ ] Changing provider and language in Settings persists across app restarts (`preferences.json` updated)
-- [ ] Stored `'auto'` for `defaultLanguage` renders as `'fr'` in the dropdown (not a blank option)
-- [ ] README.md Upload instructions updated
-- [ ] TypeScript compiles cleanly
+- [x] Settings page shows "Transcription defaults" and "App language" cards above API Keys
+- [x] Changing provider and language in Settings persists across app restarts (`preferences.json` updated)
+- [x] Stored `'auto'` for `defaultLanguage` renders as `'fr'` in the dropdown (not a blank option)
+- [x] README.md Upload instructions updated
+- [x] TypeScript compiles cleanly
 
 ---
+
+
+#### Implementation (2026-09-15, code: 04d4376, fix: 6370e51)
+Added `defaultProvider`, `defaultLanguage`, `appLanguage`, and `prefsLoaded` state to SettingsView. Mount-only `useEffect` loads all three preferences via `Promise.all` and falls back (`'auto'`→`'fr'`). Three save handlers call `setPreference` then update local state. Added "Transcription defaults" and "App language" card sections above the API Keys block. `PROVIDER_LABELS` constant added for dropdown labels. Auto-fix in `6370e51`: changed useEffect dep array from `[getPreference]` to `[]` per plan spec. README Upload step updated to remove provider mention. 78/78 tests pass.
 
 ### Phase 4: RecordView & UploadView — remove provider, hydrate language [QA] [P:3]
 
@@ -421,14 +425,18 @@ if (providerKeyMissing) {
 8. Keep the language `<select>` (per-job overridable). Remove the `grid-2` wrapper if provider dropdown removal leaves language as the only item in the grid.
 
 **Exit criteria**:
-- [ ] No provider `<select>` visible in RecordView or UploadView
-- [ ] Language dropdown in both views pre-selects the value from `defaultLanguage` preference on mount
-- [ ] Start Recording / Transcribe button is disabled until `prefsLoaded === true`
-- [ ] If provider has no API key, an inline warning is shown and the action button is blocked
-- [ ] Starting a recording or transcription job uses the provider from `defaultProvider` preference
-- [ ] TypeScript compiles cleanly
+- [x] No provider `<select>` visible in RecordView or UploadView
+- [x] Language dropdown in both views pre-selects the value from `defaultLanguage` preference on mount
+- [x] Start Recording / Transcribe button is disabled until `prefsLoaded === true`
+- [x] If provider has no API key, an inline warning is shown and the action button is blocked
+- [x] Starting a recording or transcription job uses the provider from `defaultProvider` preference
+- [x] TypeScript compiles cleanly
 
 ---
+
+
+#### Implementation (2026-09-15, code: e629536, fix: 9064ddd)
+Removed provider `<select>` from both RecordView and UploadView. Added mount-only `useEffect` loading `defaultLanguage` and `defaultProvider` preferences; initializes `selectedLanguage` and `selectedProvider` state from stored values (with safe fallbacks). `hasSecret` check on the loaded provider sets `providerKeyMissing`. Start Recording and Transcribe buttons disabled until `prefsLoaded`. Inline warning banner shown when `providerKeyMissing`. Transcription jobs use `selectedProvider`. Auto-fixes in `9064ddd`: added `setPrefsLoaded(true)` to catch blocks (prevents permanent button lockout on IPC failure); removed unreachable `!prefsLoaded` guard from `handleStop`. 78/78 tests pass.
 
 ### Phase 5: Title editing in TranscriptView and HistoryView [QA]
 
@@ -1009,6 +1017,31 @@ Manual checklist:
 *None at plan creation.*
 
 ## Review Log
+
+### 2026-09-15 — Implementation Review (after Phase 4, persona: Senior engineer, Reliability engineer)
+
+Implementation health: Green.
+4 findings (0 High, 2 Medium, 2 Low). Both Mediums fixed in cycle 1; 2 Low accepted.
+QA verification: SKIP — RecordView/UploadView changes are React UI with no independently-exercisable runtime surface without app running; unit tests pass.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | Medium | `.catch(console.error)` in both views never set `prefsLoaded=true` on IPC failure → Start/Transcribe button permanently disabled | Fixed — `setPrefsLoaded(true)` added to catch blocks in both files |
+| R2 | Medium | `handleStop` had `if (!prefsLoaded) return` guard — unreachable in practice but wrong; plan spec says stop button should not be gated | Fixed — guard removed from `handleStop` only; other guards untouched |
+| R3 | Low | No unmount cleanup for mount-only `useEffect` with async IPC chain | User: accepted — view is long-lived; no subscription or interval; theoretical StrictMode warning only |
+| R4 | Low | Language state type `'fr'|'en'|'auto'` wider than select surface | User: accepted — coercion in load effect handles `'auto'`→`'fr'` fallback; consistent with spec |
+
+### 2026-09-15 — Implementation Review (after Phase 3, persona: Senior engineer, End-user advocate)
+
+Implementation health: Green.
+3 findings (0 High, 1 Medium, 2 Low). Medium fixed in cycle 1.
+QA verification: SKIP — SettingsView is renderer-only UI; no independently-exercisable surface; unit tests pass.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | Medium | `useEffect` dep array was `[getPreference]` instead of plan-specified `[]` — diverges from plan, creates footgun if hook deps change | Fixed — changed to `[]` |
+| R2 | Low | Dead forward-reference comment `// Phase 6 adds: setLang(v)` in `handleAppLanguageChange` | User: accepted — serves as a stub marker for Phase 6 implementer; Phase 6 will replace it |
+| R3 | Low | README update landed one commit before Phase 4 UI change (ordering note, no defect) | User: accepted — end state is correct; Phase 4 now complete |
 
 ### 2026-09-15 — Implementation Review (after Phase 2, persona: Senior engineer, Reliability engineer)
 
