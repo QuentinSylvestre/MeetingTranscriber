@@ -41,7 +41,7 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
-  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<{ id: string; message: string } | null>(null);
 
   const startEdit = (job: Job) => {
     setEditingId(job.id);
@@ -55,7 +55,7 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
       try {
         await renameJob(editingId, trimmed);
       } catch {
-        setRenameError('Failed to rename. Please try again.');
+        setRenameError({ id: editingId, message: t('rename_job_error') });
       }
     }
     setEditingId(null);
@@ -137,7 +137,7 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
                 {job.title}
               </div>
             )}
-            {renameError && editingId === null && <p className="text-error text-sm">{renameError}</p>}
+            {renameError?.id === job.id && <p className="text-error text-sm">{renameError.message}</p>}
             <div className="job-meta">
               <span>{formatDate(job.created_at)}</span>
               <span style={{ color: 'var(--surface2)' }}>·</span>

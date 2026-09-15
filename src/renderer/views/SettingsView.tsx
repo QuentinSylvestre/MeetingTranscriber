@@ -77,17 +77,29 @@ export default function SettingsView(): React.ReactElement {
   };
 
   const handleProviderChange = async (v: ProviderName) => {
-    await setPreference('defaultProvider', v);
-    setDefaultProvider(v);
+    try {
+      await setPreference('defaultProvider', v);
+      setDefaultProvider(v);
+    } catch (e) {
+      console.error('Failed to save provider preference', e);
+    }
   };
   const handleLanguageChange = async (v: 'fr' | 'en') => {
-    await setPreference('defaultLanguage', v);
-    setDefaultLanguage(v);
+    try {
+      await setPreference('defaultLanguage', v);
+      setDefaultLanguage(v);
+    } catch (e) {
+      console.error('Failed to save language preference', e);
+    }
   };
   const handleAppLanguageChange = async (v: 'fr' | 'en') => {
-    await setPreference('appLanguage', v);
-    setAppLanguage(v);
-    setLang(v);
+    try {
+      await setPreference('appLanguage', v);
+      setAppLanguage(v);
+      setLang(v);
+    } catch (e) {
+      console.error('Failed to save app language preference', e);
+    }
   };
 
   return (
