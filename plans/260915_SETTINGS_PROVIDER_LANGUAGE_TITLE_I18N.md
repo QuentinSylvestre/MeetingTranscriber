@@ -609,14 +609,18 @@ Removed provider `<select>` from both RecordView and UploadView. Added mount-onl
    Note: `onClick={e => e.stopPropagation()}` on the title div prevents a single click on the title from triggering the card's `onOpenJob` handler. Card navigation only fires when clicking elsewhere on the card.
 
 **Exit criteria**:
-- [ ] TranscriptView displays the job title as its heading (loaded via `db:get-job`)
-- [ ] Double-clicking the title in TranscriptView opens an input; Enter/blur commits; Escape cancels
-- [ ] After committing, the new title persists across app restarts (stored in DB)
-- [ ] Double-clicking a job title in HistoryView opens an input; Enter/blur commits; Escape cancels
-- [ ] After committing in HistoryView, the card title updates immediately (optimistic) without a page refresh
-- [ ] TypeScript compiles cleanly
+- [x] TranscriptView displays the job title as its heading (loaded via `db:get-job`)
+- [x] Double-clicking the title in TranscriptView opens an input; Enter/blur commits; Escape cancels
+- [x] After committing, the new title persists across app restarts (stored in DB)
+- [x] Double-clicking a job title in HistoryView opens an input; Enter/blur commits; Escape cancels
+- [x] After committing in HistoryView, the card title updates immediately (optimistic) without a page refresh
+- [x] TypeScript compiles cleanly
 
 ---
+
+
+#### Implementation (2026-09-15, code: 57285e9, fix: 0f100b1)
+Added `jobTitle`, `editingTitle`, `titleDraft`, and `titleInputRef` state to TranscriptView. Mount-only `useEffect` loads title via `db:get-job` with `alive` guard for unmount cleanup. `startTitleEdit` and `commitTitleEdit` functions manage inline edit UX (Enter/blur commits, Escape cancels). Page heading replaced with conditional input/div pattern, accessibility attributes added (`role="button"`, `tabIndex`, `aria-label`, `cursor: text`). Added `renameJob` callback to `useHistory` (state update after `await` only). Wired inline title editing to HistoryView with `editingId`, `titleDraft`, `renameError` state and `stopPropagation` to prevent card navigation on title click. Divergence: pre-existing TranscriptView audio URL fix (`app:///` Windows path) included in same commit due to same-file pathspec. Auto-fix in `0f100b1`: added `if (!editingTitle) return;` guard to `commitTitleEdit` to prevent double-write on Enter→blur event sequence. 78/78 tests pass.
 
 ### Phase 6: i18n context and string translation [QA]
 
@@ -1017,6 +1021,17 @@ Manual checklist:
 *None at plan creation.*
 
 ## Review Log
+
+### 2026-09-15 — Implementation Review (after Phase 5, persona: Senior engineer, End-user advocate)
+
+Implementation health: Green.
+2 findings (0 High, 1 Medium, 1 Low). Medium fixed in cycle 1.
+QA verification: SKIP — Phase 5 is renderer UI; no independently-exercisable surface without running app; unit tests pass.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| R1 | Medium | `commitTitleEdit` called twice on Enter: Enter fires onKeyDown, then blur fires onBlur; second call dispatched second IPC write | Fixed — `if (!editingTitle) return;` guard added as first line |
+| R2 | Low | Dev debug `audio src:` overlay bundled from pre-existing changes (production-safe, NODE_ENV gated) | User: accepted — pre-existing improvement, production-safe |
 
 ### 2026-09-15 — Implementation Review (after Phase 4, persona: Senior engineer, Reliability engineer)
 
