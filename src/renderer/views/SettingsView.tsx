@@ -53,7 +53,7 @@ export default function SettingsView(): React.ReactElement {
       setAppLanguage(appLangVal);
       setPrefsLoaded(true);
     }).catch(console.error);
-  }, [getPreference]);
+  }, []);
 
   const handleSave = async (p: ProviderName) => {
     const v = inputs[p].trim();
