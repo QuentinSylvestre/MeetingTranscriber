@@ -1,7 +1,7 @@
 # Settings: Provider, Language, Title Editing & UI Language
 
 > **Date**: 2026-09-15
-> **Status**: In Progress
+> **Status**: Complete
 > **Scope**: 4 features — provider global setting, default language preference, post-transcription title editing, FR/EN UI language
 > **Estimated effort**: 1–2 days
 
@@ -1025,6 +1025,41 @@ Manual checklist:
 *None at plan creation.*
 
 ## Review Log
+
+### 2026-09-15 — Post-Implementation Review
+
+Overall implementation health: Green.
+Personas: Senior engineer, Reliability engineer, Architect.
+14 findings across 3 personas (0 High, 4 Medium, 10 Low). All 4 Mediums fixed.
+QA verification: BLOCKED — Electron app requires GUI environment to start; `npm run dev` opens a windowed desktop application not drivable headlessly. 78/78 unit tests pass; TypeScript: no new errors in any plan file. Manual QA checklist in § 7 Verification covers all runtime surfaces.
+
+#### Test execution summary
+
+| Phase | Tests | QA | Notes |
+|---|---|---|---|
+| 1: Types + store + IPC | pass (78/78) | SKIP | Types/store/IPC; no runtime surface |
+| 2: DB updateJobTitle | pass (78/78) | SKIP | DB function + IPC handler; no UI surface |
+| 3: SettingsView UI | pass (78/78) | SKIP | Renderer-only; no independently-exercisable surface |
+| 4: RecordView/UploadView | pass (78/78) | SKIP | Renderer-only UI changes |
+| 5: Title editing | pass (78/78) | SKIP | Renderer-only inline edit UI |
+| 6: i18n system | pass (78/78) | SKIP | Renderer context; TypeScript exhaustiveness is the primary gate |
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | Medium | `renameError` in HistoryView rendered under all job cards after failed rename | Fixed — per-job `{id, message}` state; `renameError?.id === job.id` gate |
+| 2 | Medium | `renameError` text hardcoded English, not using i18n system | Fixed — `rename_job_error` added to `i18n.ts` en+fr; `t()` used |
+| 3 | Medium | RecordView `handleStop` catch swallowed transcription start failure silently | Fixed — `setError(t('transcription_start_error'))` added; key added to i18n.ts |
+| 4 | Medium | SettingsView preference save handlers had no try/catch on IPC failure | Fixed — try/catch added to all 3 handlers |
+| 5 | Low | handleStop providerKeyMissing guard is dead code in practice | User: accepted — harmless defensive check |
+| 6 | Low | qvalidate parallel-phases docs commit not recognized for phases 3+4 combined commit | User: accepted — validator limitation for combined parallel docs commit |
+| 7 | Low | Pre-existing TS `on`/`off` type conflict in `electronAPI` declarations | User: accepted — pre-existing, out of plan scope |
+| 8 | Low | No unmount cleanup in useTranscript useEffect (pre-existing) | User: accepted — pre-existing pattern, not introduced by this plan |
+| 9 | Low | `setLang`/`setPreference` dual-write coupling — persistence owned by SettingsView | User: accepted — acceptable for current 2-language scope; architect noted improvement |
+| 10 | Low | `{{provider}}` interpolation duplicated at multiple call sites | User: accepted — simple string.replace, acceptable for 2 occurrences |
+| 11 | Low | Dead catch-all check in settings:set-preference IPC handler | User: accepted — defensive; no behavioral impact |
+| 12 | Low | App language selector options hardcoded (not via t()) | User: accepted — intentional; meta-labels must self-label in their own language |
+| 13 | Low | ErrorBoundaryWithI18n placement caveat undocumented | User: accepted — stable in current architecture |
+| 14 | Low | Job status badge values not translated | User: accepted — not in plan scope; semi-intelligible cross-language |
 
 ### 2026-09-15 — Implementation Review (after Phase 6, persona: Senior engineer, End-user advocate)
 
