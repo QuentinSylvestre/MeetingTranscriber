@@ -27,5 +27,11 @@ export function useHistory() {
     await refresh();
   }, [refresh]);
 
-  return { jobs, loading, error, refresh, deleteJob };
+  const renameJob = useCallback(async (jobId: string, newTitle: string) => {
+    // Update state ONLY after the IPC call succeeds (not optimistic before await)
+    await window.electronAPI.invoke('db:update-job-title', { id: jobId, title: newTitle });
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, title: newTitle } : j));
+  }, []);
+
+  return { jobs, loading, error, refresh, deleteJob, renameJob };
 }

@@ -35,8 +35,29 @@ function formatDuration(s: number | null): string {
 }
 
 export default function HistoryView({ onOpenJob }: HistoryViewProps): React.ReactElement {
-  const { jobs, loading, error, deleteJob } = useHistory();
+  const { jobs, loading, error, deleteJob, renameJob } = useHistory();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  const startEdit = (job: Job) => {
+    setEditingId(job.id);
+    setTitleDraft(job.title);
+    setRenameError(null);
+  };
+  const commitEdit = async () => {
+    if (!editingId) return;
+    const trimmed = titleDraft.trim();
+    if (trimmed) {
+      try {
+        await renameJob(editingId, trimmed);
+      } catch {
+        setRenameError('Failed to rename. Please try again.');
+      }
+    }
+    setEditingId(null);
+  };
 
   if (loading) return (
     <div style={{ color: 'var(--overlay1)', fontSize: 13, padding: 'var(--space-4)' }}>
@@ -82,7 +103,37 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
           }} />
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="job-title">{job.title}</div>
+            {editingId === job.id ? (
+              <input
+                className="form-input"
+                value={titleDraft}
+                autoFocus
+                onChange={e => setTitleDraft(e.target.value)}
+                onBlur={() => void commitEdit()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') void commitEdit();
+                  if (e.key === 'Escape') setEditingId(null);
+                }}
+                onClick={e => e.stopPropagation()}
+                aria-label="Edit job title"
+                style={{ fontSize: 13, fontWeight: 600 }}
+              />
+            ) : (
+              <div
+                className="job-title"
+                onClick={e => e.stopPropagation()}
+                onDoubleClick={e => { e.stopPropagation(); startEdit(job); }}
+                title="Double-click to rename"
+                style={{ cursor: 'text' }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && startEdit(job)}
+                aria-label={`${job.title} — double-click to rename`}
+              >
+                {job.title}
+              </div>
+            )}
+            {renameError && editingId === null && <p className="text-error text-sm">{renameError}</p>}
             <div className="job-meta">
               <span>{formatDate(job.created_at)}</span>
               <span style={{ color: 'var(--surface2)' }}>·</span>
