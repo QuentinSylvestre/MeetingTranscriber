@@ -22,6 +22,9 @@ export const en = {
   record_microphone_label: 'Microphone',
   record_microphone_default: 'Default microphone',
   record_language_label: 'Language',
+  // Shared provider error (used in RecordView + UploadView)
+  provider_key_missing_banner: 'No API key for {{provider}}. Go to Settings → API Keys.',
+  provider_key_missing_error: 'No API key configured for {{provider}}. Go to Settings → API Keys.',
   // UploadView
   upload_title: 'Upload audio',
   upload_subtitle: 'Transcribe an existing recording',
@@ -117,6 +120,8 @@ export const fr: Record<I18nKey, string> = {
   record_microphone_label: 'Microphone',
   record_microphone_default: 'Microphone par défaut',
   record_language_label: 'Langue',
+  provider_key_missing_banner: 'Aucune clé API pour {{provider}}. Allez dans Paramètres → Clés API.',
+  provider_key_missing_error: 'Aucune clé API configurée pour {{provider}}. Allez dans Paramètres → Clés API.',
   upload_title: 'Importer un fichier audio',
   upload_subtitle: 'Transcrivez un enregistrement existant',
   upload_drop_text: 'Cliquez pour parcourir les fichiers audio',

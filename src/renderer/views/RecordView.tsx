@@ -62,7 +62,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   const handleStart = async () => {
     if (!prefsLoaded) return;
     if (providerKeyMissing) {
-      setError(`No API key configured for ${PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.`);
+      setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
     const jobId = `job-${Date.now()}`;
@@ -72,7 +72,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
 
   const handleStop = async () => {
     if (providerKeyMissing) {
-      setError(`No API key configured for ${PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.`);
+      setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
     const { audioPath } = await stop();
@@ -121,7 +121,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
           <>
             {providerKeyMissing && (
               <p className="text-error text-sm mb-4" role="alert">
-                No API key for {PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.
+                {t('provider_key_missing_banner').replace('{{provider}}', PROVIDER_LABELS[selectedProvider])}
               </p>
             )}
             <button

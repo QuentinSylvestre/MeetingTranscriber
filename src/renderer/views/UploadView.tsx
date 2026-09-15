@@ -73,7 +73,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
     if (!selected) { setError('Please select an audio file.'); return; }
     if (!prefsLoaded) return;
     if (providerKeyMissing) {
-      setError(`No API key configured for ${PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.`);
+      setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
     setSubmitting(true);
@@ -181,7 +181,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
 
       {providerKeyMissing && (
         <p className="text-error text-sm mb-4" role="alert">
-          No API key for {PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.
+          {t('provider_key_missing_banner').replace('{{provider}}', PROVIDER_LABELS[selectedProvider])}
         </p>
       )}
 
