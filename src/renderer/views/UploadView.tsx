@@ -40,7 +40,10 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
       const keyPresent = await hasSecret(SECRET_KEY_NAMES[provVal]);
       setProviderKeyMissing(!keyPresent);
       setPrefsLoaded(true);
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      setPrefsLoaded(true); // allow user to proceed even if prefs couldn't be loaded
+    });
   }, []); // mount-only — getPreference/hasSecret are stable useCallbacks
 
   const validateExt = (name: string): boolean => {

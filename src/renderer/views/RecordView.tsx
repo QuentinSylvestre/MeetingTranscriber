@@ -51,7 +51,10 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       const keyPresent = await hasSecret(SECRET_KEY_NAMES[provVal]);
       setProviderKeyMissing(!keyPresent);
       setPrefsLoaded(true);
-    }).catch(console.error);
+    }).catch((err) => {
+      console.error(err);
+      setPrefsLoaded(true); // allow user to proceed even if prefs couldn't be loaded
+    });
   }, []); // mount-only — getPreference/hasSecret are stable useCallbacks
 
   const handleStart = async () => {
@@ -66,7 +69,6 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   };
 
   const handleStop = async () => {
-    if (!prefsLoaded) return;
     if (providerKeyMissing) {
       setError(`No API key configured for ${PROVIDER_LABELS[selectedProvider]}. Go to Settings → API Keys.`);
       return;
