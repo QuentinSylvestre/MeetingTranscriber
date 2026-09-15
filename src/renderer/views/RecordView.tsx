@@ -91,7 +91,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       onJobStarted?.(jobId, audioPath);
     } catch (err) {
       console.error('Failed to start transcription job:', err);
-      setError('Transcription failed to start. Please try again.');
+      setError(t('transcription_start_error'));
     }
   };
 
