@@ -27,7 +27,7 @@ export class ElevenLabsProvider implements TranscriptionProvider {
     const formData = new FormData();
     formData.append('file', new Blob([fileBuffer], { type: mimeType[ext] ?? 'audio/mpeg' }), filename);
     formData.append('model_id', 'scribe_v2');
-    if (options.diarize) formData.append('diarization', 'true');
+    if (options.diarize) formData.append('diarize', 'true');
     if (options.language !== 'auto') formData.append('language_code', options.language);
 
     const resp = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {

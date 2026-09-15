@@ -1,10 +1,38 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import log from 'electron-log';
 import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn } from './types';
 
-const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe-preview:generateContent';
-const GEMINI_FILE_UPLOAD_URL = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
-const BASE64_SIZE_LIMIT = 20_000_000; // 20 MB
+// Gemini 3.5 Transcribe — dedicated speech-to-text model.
+// Docs: https://ai.google.dev/gemini-api/docs/transcribe
+//
+// Endpoint:  POST /v1beta/interactions
+// Model:     gemini-3.5-transcribe
+// Auth:      x-goog-api-key header
+//
+// Files are uploaded via the Files API first, then referenced by URI.
+// Diarization:   transcription_config.mode.diarization_mode = "speaker"
+// Timestamps:    transcription_config.mode.timestamp_granularities = ["word"]
+// Language hint: transcription_config.language_codes = ["fr-FR"] (BCP-47)
+//
+// Response annotations: steps[].content[].annotations[] where type == "word_info"
+// Each word_info has: text, speaker (e.g. "spk_1"), start_offset ("0.500s"), end_offset
+// The full plain-text transcript is in interaction.output_text.
+//
+// Limitations:
+//   - Max 30 minutes when diarization is enabled
+//   - Up to 8 speakers (3+ is experimental)
+//   - custom_vocabulary is incompatible with diarization
+
+const INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const FILES_API_URL = 'https://generativelanguage.googleapis.com/upload/v1beta/files';
+const MODEL = 'gemini-3.5-transcribe';
+
+// Map our language codes to BCP-47 codes the API accepts.
+const LANGUAGE_CODE: Record<string, string> = {
+  fr: 'fr-FR',
+  en: 'en-US',
+};
 
 export class GoogleProvider implements TranscriptionProvider {
   name = 'google';
@@ -17,46 +45,57 @@ export class GoogleProvider implements TranscriptionProvider {
     onProgress: (status: string) => void,
     signal: AbortSignal
   ): Promise<TranscriptChunkResult[]> {
-    onProgress('Preparing audio...');
+    onProgress('Uploading audio...');
 
+    // Always upload via Files API — the interactions endpoint requires a URI reference.
     const fileBuffer = fs.readFileSync(filePath);
-    let audioPart: Record<string, unknown>;
+    const filename = path.basename(filePath);
+    const ext = path.extname(filename).toLowerCase();
+    const mimeType: Record<string, string> = {
+      '.mp3': 'audio/mp3', '.mp4': 'audio/mp4', '.m4a': 'audio/m4a',
+      '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+    };
+    const audioMime = mimeType[ext] ?? 'audio/mp3';
 
-    if (fileBuffer.length > BASE64_SIZE_LIMIT) {
-      // Use File API for large files (> 20 MB)
-      log.warn(`Google: file ${filePath} is ${Math.round(fileBuffer.length / 1024 / 1024)} MB, using File API`);
-      onProgress('Uploading to File API...');
-      const fileUri = await this.uploadGoogleFile(filePath, fileBuffer, signal);
-      audioPart = { fileData: { mimeType: 'audio/mp3', fileUri } };
-    } else {
-      const base64 = fileBuffer.toString('base64');
-      audioPart = { inlineData: { mimeType: 'audio/mp3', data: base64 } };
+    log.info(`Google: uploading ${filename} (${Math.round(fileBuffer.length / 1024 / 1024)} MB)`);
+    const fileUri = await this.uploadFile(filePath, fileBuffer, audioMime, signal);
+
+    onProgress('Transcribing...');
+
+    // Build transcription_config.
+    // diarization_mode + timestamp_granularities require verbatim mode.
+    // language_codes: omit for auto-detect, supply BCP-47 code otherwise.
+    const transcriptionConfig: Record<string, unknown> = {
+      mode: {
+        type: 'verbatim',
+        diarization_mode: 'speaker',
+        timestamp_granularities: ['word'],
+      },
+    };
+    if (options.language !== 'auto') {
+      const bcp47 = LANGUAGE_CODE[options.language];
+      if (bcp47) transcriptionConfig.language_codes = [bcp47];
     }
 
-    const languageInstruction = options.language !== 'auto'
-      ? ` Transcribe in ${options.language === 'fr' ? 'French' : 'English'}.`
-      : '';
-
     const requestBody = {
-      contents: [{
-        parts: [
-          {
-            text: `Transcribe this audio with speaker diarization.${languageInstruction} Return a JSON object with a "utterances" array. Each utterance has: "speaker" (string, e.g. "Speaker 0"), "start" (seconds, float), "end" (seconds, float), "text" (string). Only return the JSON object, no other text.`,
-          },
-          audioPart,
-        ],
-      }],
-      generationConfig: {
-        responseMimeType: 'application/json',
+      model: MODEL,
+      input: [
+        {
+          type: 'audio',
+          uri: fileUri,
+          mime_type: audioMime,
+        },
+      ],
+      generation_config: {
+        transcription_config: transcriptionConfig,
       },
     };
 
-    onProgress('Transcribing...');
-    const resp = await fetch(GEMINI_GENERATE_URL, {
+    const resp = await fetch(INTERACTIONS_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': this.apiKey, // Use header, not query param
+        'x-goog-api-key': this.apiKey,
       },
       body: JSON.stringify(requestBody),
       signal,
@@ -67,48 +106,99 @@ export class GoogleProvider implements TranscriptionProvider {
       throw new Error(`Google Gemini transcription failed: HTTP ${resp.status} ${errText.slice(0, 200)}`);
     }
 
-    const rawResult = (await resp.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
+    // Response shape:
+    // {
+    //   steps: [{
+    //     content: [{
+    //       text: "full transcript",
+    //       annotations: [
+    //         { type: "word_info", text: "Hello", speaker: "spk_1",
+    //           start_offset: "0.100s", end_offset: "0.450s" },
+    //         ...
+    //       ]
+    //     }]
+    //   }]
+    // }
+    type WordInfo = { type: string; text: string; speaker?: string; start_offset?: string; end_offset?: string };
+    type ContentBlock = { text?: string; annotations?: WordInfo[] };
+    type Step = { content?: ContentBlock[] };
+    const result = (await resp.json()) as { steps?: Step[] };
 
-    const textContent = rawResult.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-    let parsed: { utterances?: Array<{ speaker: string; start: number; end: number; text: string }> };
-    try {
-      parsed = JSON.parse(textContent);
-    } catch (parseErr) {
-      // Model returned non-JSON (possible refusal or unexpected format).
-      // responseMimeType: 'application/json' instructs Gemini to return JSON;
-      // if it doesn't, something went wrong — treat as a hard error.
-      throw new Error(`Google: model returned unparseable response. Fragment: ${textContent.slice(0, 200)}`);
-    }
-
-    if (!parsed.utterances || parsed.utterances.length === 0) {
-      log.warn('Google: model returned zero utterances (silent recording or model issue)');
-      // Don't throw — the audio may be genuinely silent. Return empty results.
+    // Collect all word_info annotations across all steps/content blocks.
+    const words: WordInfo[] = [];
+    for (const step of result.steps ?? []) {
+      for (const content of step.content ?? []) {
+        for (const annotation of content.annotations ?? []) {
+          if (annotation.type === 'word_info') words.push(annotation);
+        }
+      }
     }
 
     onProgress('Complete');
-    log.info(`Google: ${parsed.utterances?.length ?? 0} utterances`);
+    log.info(`Google: ${words.length} word annotations, ${filename}`);
 
-    // Return plain speaker labels as provided by the model ('Speaker 0', etc.).
-    // runner.ts applies the 'Chunk N \u2013 ' prefix for multi-chunk jobs.
-    const turns: SpeakerTurn[] = (parsed.utterances ?? []).map((u) => ({
-      speakerLabel: u.speaker,
-      startMs: Math.round(u.start * 1000),
-      endMs: Math.round(u.end * 1000),
-      text: u.text,
-    }));
+    if (words.length === 0) {
+      log.warn('Google: no word annotations returned (silent audio or diarization produced no words)');
+      return [{ chunkIndex: 0, turns: [] }];
+    }
+
+    // Group consecutive words by speaker into turns.
+    const turns: SpeakerTurn[] = [];
+    let currentSpeaker: string | null = null;
+    let currentWords: string[] = [];
+    let currentStart = 0;
+    let currentEnd = 0;
+
+    const parseOffset = (s?: string): number => {
+      // Format: "0.500s" — strip trailing 's' and convert to ms.
+      if (!s) return 0;
+      return Math.round(parseFloat(s.replace('s', '')) * 1000);
+    };
+
+    for (const word of words) {
+      const speaker = word.speaker ?? 'spk_0';
+      const startMs = parseOffset(word.start_offset);
+      const endMs = parseOffset(word.end_offset);
+
+      if (speaker !== currentSpeaker) {
+        if (currentSpeaker !== null && currentWords.length > 0) {
+          turns.push({
+            speakerLabel: formatSpeaker(currentSpeaker),
+            startMs: currentStart,
+            endMs: currentEnd,
+            text: currentWords.join(' ').trim(),
+          });
+        }
+        currentSpeaker = speaker;
+        currentWords = [word.text];
+        currentStart = startMs;
+        currentEnd = endMs;
+      } else {
+        currentWords.push(word.text);
+        currentEnd = endMs;
+      }
+    }
+    if (currentSpeaker !== null && currentWords.length > 0) {
+      turns.push({
+        speakerLabel: formatSpeaker(currentSpeaker),
+        startMs: currentStart,
+        endMs: currentEnd,
+        text: currentWords.join(' ').trim(),
+      });
+    }
 
     return [{ chunkIndex: 0, turns }];
   }
 
-  private async uploadGoogleFile(
+  private async uploadFile(
     filePath: string,
     fileBuffer: Buffer,
+    mimeType: string,
     signal: AbortSignal
   ): Promise<string> {
-    // Two-step File API upload: initiate (resumable) + upload data
-    const initiateResp = await fetch(`${GEMINI_FILE_UPLOAD_URL}?uploadType=resumable`, {
+    // Two-step resumable upload to Files API.
+    // Step 1: initiate — get the resumable upload URL.
+    const initiateResp = await fetch(`${FILES_API_URL}?uploadType=resumable`, {
       method: 'POST',
       headers: {
         'x-goog-api-key': this.apiKey,
@@ -116,9 +206,9 @@ export class GoogleProvider implements TranscriptionProvider {
         'X-Goog-Upload-Protocol': 'resumable',
         'X-Goog-Upload-Command': 'start',
         'X-Goog-Upload-Header-Content-Length': String(fileBuffer.length),
-        'X-Goog-Upload-Header-Content-Type': 'audio/mp3',
+        'X-Goog-Upload-Header-Content-Type': mimeType,
       },
-      body: JSON.stringify({ file: { displayName: filePath } }),
+      body: JSON.stringify({ file: { displayName: path.basename(filePath) } }),
       signal,
     });
 
@@ -129,12 +219,11 @@ export class GoogleProvider implements TranscriptionProvider {
     const uploadUrl = initiateResp.headers.get('x-goog-upload-url');
     if (!uploadUrl) throw new Error('Google File API: no upload URL in response');
 
-    // The resumable upload URL is pre-authenticated by the initiate step;
-    // no Authorization or api-key header is needed for the upload PUT/POST.
+    // Step 2: upload file data.
     const uploadResp = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'audio/mp3',
+        'Content-Type': mimeType,
         'X-Goog-Upload-Offset': '0',
         'X-Goog-Upload-Command': 'upload, finalize',
       },
@@ -150,7 +239,14 @@ export class GoogleProvider implements TranscriptionProvider {
     const fileUri = fileInfo.file?.uri;
     if (!fileUri) throw new Error('Google File API: no file URI in upload response');
 
-    log.info(`Google: File API upload complete, URI: ${fileUri}`);
+    log.info(`Google: file uploaded, URI: ${fileUri}`);
     return fileUri;
   }
+}
+
+// Convert "spk_1" → "Speaker 1", "spk_0" → "Speaker 0", etc.
+// Falls back to the raw label for unexpected formats.
+function formatSpeaker(raw: string): string {
+  const m = raw.match(/^spk_(\d+)$/);
+  return m ? `Speaker ${m[1]}` : raw;
 }

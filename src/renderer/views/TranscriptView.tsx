@@ -47,13 +47,17 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
     }
   };
   // Build the app:// URL for the audio file.
-  // Use three slashes (app:///path) so the URL parser treats the path as the
-  // pathname rather than interpreting a Windows drive letter (C:) as a hostname.
-  // The protocol handler strips the leading / from /C:/... on Windows.
-  const forwardPath = audioPath.replace(/\\/g, '/');
-  const audioUrl = forwardPath.startsWith('/')
-    ? `app://${forwardPath}`          // already has leading slash (Unix)
-    : `app:///${forwardPath}`;        // add leading slash (Windows: C:/...)
+  // Registered as a 'standard' scheme, Chromium normalises app:///C:/path to
+  // app://c/path (drive letter becomes the host, lowercased). Embrace this by
+  // always using app://<drive>/<rest> on Windows so round-trip reconstruction
+  // in the protocol handler is unambiguous.
+  const buildAudioUrl = (p: string): string => {
+    const forward = p.replace(/\\/g, '/');
+    const winDrive = forward.match(/^([A-Za-z]):\/(.*)/);
+    if (winDrive) return `app://${winDrive[1].toLowerCase()}/${winDrive[2]}`;
+    return `app://${forward}`; // Unix: leading slash already present
+  };
+  const audioUrl = buildAudioUrl(audioPath);
 
   const onSeek = useCallback((ms: number) => audioPlayerRef.current?.seekTo(ms), []);
 

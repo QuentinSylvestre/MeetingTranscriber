@@ -14,7 +14,7 @@ describe('OpenAIProvider', () => {
 
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('maps segments to SpeakerTurns with correct labels', async () => {
+  it('uses gpt-4o-transcribe-diarize with diarized_json and chunking_strategy=auto', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -41,11 +41,39 @@ describe('OpenAIProvider', () => {
     expect(results[0].turns[0].startMs).toBe(0);
     expect(results[0].turns[0].endMs).toBe(1500);
     expect(results[0].turns[0].text).toBe('Hello');
+
+    const body = mockFetch.mock.calls[0][1].body as FormData;
+    expect(body.get('model')).toBe('gpt-4o-transcribe-diarize');
+    expect(body.get('response_format')).toBe('diarized_json');
+    expect(body.get('chunking_strategy')).toBe('auto');
+    // language param must not be sent (unsupported by this model)
+    expect(body.get('language')).toBeNull();
+  });
+
+  it('throws a clear error on 403 — no fallback', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ error: { message: 'Project does not have access to model' } }),
+    });
+
+    await expect(
+      provider.transcribeFile('/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal)
+    ).rejects.toThrow(/does not have access to gpt-4o-transcribe-diarize/);
+
+    // Must not make a second request (no silent fallback)
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when diarize is false — diarization is required', async () => {
+    await expect(
+      provider.transcribeFile('/fake/audio.mp3', { language: 'en', diarize: false }, () => {}, new AbortController().signal)
+    ).rejects.toThrow('OpenAI provider requires diarize: true');
+
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('returns plain Speaker labels (runner applies Chunk N prefix)', async () => {
-    // The adapter returns 'Speaker X'; the 'Chunk N \u2013 ' prefix is applied
-    // by runner.ts for multi-chunk jobs (needsChunkPrefix logic).
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -61,15 +89,13 @@ describe('OpenAIProvider', () => {
       new AbortController().signal
     );
 
-    // Adapter returns plain labels; runner applies 'Chunk N \u2013 ' prefix
     expect(results[0].turns[0].speakerLabel).toBe('Speaker 0');
   });
 
-  it('falls back to Speaker 0 when speaker field is absent', async () => {
+  it('falls back to Speaker 0 when speaker field is absent in diarized response', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        // speaker field omitted
         segments: [{ start: 0.0, end: 2.0, text: 'No speaker tag' }],
       }),
       text: async () => '',
@@ -98,21 +124,7 @@ describe('OpenAIProvider', () => {
     expect((fetchOptions.headers as Record<string, string>)['Authorization']).toBe('Bearer sk-test-key');
   });
 
-  it('does not send language param when language is auto', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ segments: [] }),
-      text: async () => '',
-    });
-
-    await provider.transcribeFile('/fake/audio.mp3', { language: 'auto', diarize: true }, () => {}, new AbortController().signal);
-
-    // Verify FormData was the body (no direct way to inspect FormData entries,
-    // but we can verify fetch was called once and succeeded)
-    expect(mockFetch).toHaveBeenCalledOnce();
-  });
-
-  it('throws when HTTP response is not ok', async () => {
+  it('throws on non-403 HTTP errors', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 429,
@@ -133,7 +145,7 @@ describe('OpenAIProvider', () => {
 
     const results = await provider.transcribeFile(
       '/fake/audio.mp3',
-      { language: 'en', diarize: false },
+      { language: 'en', diarize: true },
       () => {},
       new AbortController().signal
     );

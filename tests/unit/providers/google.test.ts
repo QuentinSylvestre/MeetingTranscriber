@@ -8,144 +8,132 @@ vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   return {
     ...actual,
-    readFileSync: vi.fn((p: unknown) => {
-      // Return a large buffer for paths containing 'large' to trigger the File API path
-      const pathStr = String(p);
-      if (pathStr.includes('large')) {
-        return Buffer.alloc(25_000_000, 0); // > 20 MB
-      }
-      return Buffer.alloc(1024, 0);
-    }),
+    readFileSync: vi.fn(() => Buffer.alloc(1024, 0)),
   };
 });
+
+// Helpers for building mock responses in the new API shape.
+function makeWordAnnotation(text: string, speaker: string, startS: number, endS: number) {
+  return {
+    type: 'word_info',
+    text,
+    speaker,
+    start_offset: `${startS}s`,
+    end_offset: `${endS}s`,
+  };
+}
+
+function makeInteractionResponse(annotations: ReturnType<typeof makeWordAnnotation>[]) {
+  return {
+    steps: [{
+      content: [{
+        text: annotations.map(a => a.text).join(' '),
+        annotations,
+      }],
+    }],
+  };
+}
+
+// Two fetch calls are always needed: upload initiate + upload data + interactions.
+// Helper to mock the upload flow then the transcription response.
+function mockUploadThenTranscribe(transcriptionResponse: unknown) {
+  // Upload initiate
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    headers: new Headers({ 'x-goog-upload-url': 'https://googleapis.com/upload/12345' }),
+    json: async () => ({}),
+    text: async () => '',
+  });
+  // Upload data
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ file: { uri: 'https://generativelanguage.googleapis.com/files/abc123' } }),
+    text: async () => '',
+  });
+  // Interactions call
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => transcriptionResponse,
+    text: async () => '',
+  });
+}
 
 describe('GoogleProvider', () => {
   const provider = new GoogleProvider('test-google-key');
 
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('uses inline data for small files (< 20 MB)', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: { parts: [{
-            text: JSON.stringify({
-              utterances: [
-                { speaker: 'Speaker 0', start: 0.0, end: 1.0, text: 'Bonjour' },
-                { speaker: 'Speaker 1', start: 1.1, end: 2.0, text: 'Salut' },
-              ],
-            }),
-          }] },
-        }],
-      }),
-      text: async () => '',
-    });
+  it('groups word annotations by speaker into turns', async () => {
+    mockUploadThenTranscribe(makeInteractionResponse([
+      makeWordAnnotation('Bonjour', 'spk_0', 0.0, 0.5),
+      makeWordAnnotation('tout', 'spk_0', 0.6, 0.8),
+      makeWordAnnotation('le', 'spk_0', 0.9, 1.0),
+      makeWordAnnotation('monde', 'spk_0', 1.1, 1.5),
+      makeWordAnnotation('Salut', 'spk_1', 1.6, 2.0),
+    ]));
 
     const results = await provider.transcribeFile(
-      '/fake/chunk_000.mp3',
+      '/fake/chunk.mp3',
       { language: 'fr', diarize: true },
       () => {},
       new AbortController().signal
     );
 
-    // Verify x-goog-api-key header used (not query param)
-    const fetchCall = mockFetch.mock.calls[0];
-    const fetchOptions = fetchCall[1] as RequestInit;
-    expect((fetchOptions.headers as Record<string, string>)['x-goog-api-key']).toBe('test-google-key');
-
-    // Verify fetch URL does NOT include query param
-    const fetchUrl = fetchCall[0] as string;
-    expect(fetchUrl).not.toContain('?key=');
-
     expect(results).toHaveLength(1);
-    expect(results[0].chunkIndex).toBe(0);
     expect(results[0].turns).toHaveLength(2);
     expect(results[0].turns[0].speakerLabel).toBe('Speaker 0');
-    expect(results[0].turns[1].speakerLabel).toBe('Speaker 1');
+    expect(results[0].turns[0].text).toBe('Bonjour tout le monde');
     expect(results[0].turns[0].startMs).toBe(0);
-    expect(results[0].turns[0].endMs).toBe(1000);
-    expect(results[0].turns[0].text).toBe('Bonjour');
+    expect(results[0].turns[0].endMs).toBe(1500);
+    expect(results[0].turns[1].speakerLabel).toBe('Speaker 1');
+    expect(results[0].turns[1].text).toBe('Salut');
   });
 
-  it('triggers File API path when file > 20 MB', async () => {
-    // File API initiate
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      headers: new Headers({ 'x-goog-upload-url': 'https://googleapis.com/upload/12345' }),
-      json: async () => ({}),
-      text: async () => '',
-    });
-    // File API upload
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ file: { uri: 'https://cdn.googleapis.com/files/abc123' } }),
-      text: async () => '',
-    });
-    // Generate content (uses fileData, not inlineData)
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: { parts: [{ text: JSON.stringify({ utterances: [] }) }] },
-        }],
-      }),
-      text: async () => '',
-    });
+  it('uses /v1beta/interactions endpoint with correct model and transcription_config', async () => {
+    mockUploadThenTranscribe({ steps: [] });
 
-    const results = await provider.transcribeFile(
-      '/fake/large-chunk.mp3',
-      { language: 'auto', diarize: true },
+    await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'en', diarize: true },
       () => {},
       new AbortController().signal
     );
 
-    expect(results[0].turns).toHaveLength(0);
-    // 3 fetch calls: initiate + upload + generateContent
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    // Third call is the interactions request
+    const interactionsCall = mockFetch.mock.calls[2];
+    expect(interactionsCall[0]).toBe('https://generativelanguage.googleapis.com/v1beta/interactions');
+
+    const body = JSON.parse(interactionsCall[1].body as string);
+    expect(body.model).toBe('gemini-3.5-transcribe');
+    expect(body.input[0].type).toBe('audio');
+    expect(body.generation_config.transcription_config.mode.diarization_mode).toBe('speaker');
+    expect(body.generation_config.transcription_config.mode.timestamp_granularities).toContain('word');
+
+    // Auth via header, not query param
+    expect(interactionsCall[1].headers['x-goog-api-key']).toBe('test-google-key');
+    expect(interactionsCall[0]).not.toContain('?key=');
   });
 
-  it('throws when generateContent HTTP response is not ok', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 403,
-      text: async () => 'Permission denied',
-    });
+  it('sends BCP-47 language code for French', async () => {
+    mockUploadThenTranscribe({ steps: [] });
 
-    await expect(
-      provider.transcribeFile('/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal)
-    ).rejects.toThrow('Google Gemini transcription failed: HTTP 403');
+    await provider.transcribeFile('/fake/audio.mp3', { language: 'fr', diarize: true }, () => {}, new AbortController().signal);
+
+    const body = JSON.parse(mockFetch.mock.calls[2][1].body as string);
+    expect(body.generation_config.transcription_config.language_codes).toEqual(['fr-FR']);
   });
 
-  it('throws when model returns malformed JSON (non-JSON response)', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: { parts: [{ text: 'this is not json {{{' }] },
-        }],
-      }),
-      text: async () => '',
-    });
+  it('omits language_codes for auto-detect', async () => {
+    mockUploadThenTranscribe({ steps: [] });
 
-    // Malformed JSON now throws — responseMimeType:'application/json' instructs Gemini
-    // to return JSON; if it doesn't, something went wrong and the error propagates.
-    await expect(
-      provider.transcribeFile(
-        '/fake/audio.mp3',
-        { language: 'en', diarize: true },
-        () => {},
-        new AbortController().signal
-      )
-    ).rejects.toThrow('Google: model returned unparseable response. Fragment:');
+    await provider.transcribeFile('/fake/audio.mp3', { language: 'auto', diarize: true }, () => {}, new AbortController().signal);
+
+    const body = JSON.parse(mockFetch.mock.calls[2][1].body as string);
+    expect(body.generation_config.transcription_config.language_codes).toBeUndefined();
   });
 
-  it('handles missing candidates in response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ candidates: [] }),
-      text: async () => '',
-    });
+  it('returns empty turns when steps are empty', async () => {
+    mockUploadThenTranscribe({ steps: [] });
 
     const results = await provider.transcribeFile(
       '/fake/audio.mp3',
@@ -157,8 +145,32 @@ describe('GoogleProvider', () => {
     expect(results[0].turns).toHaveLength(0);
   });
 
+  it('throws when interactions HTTP response is not ok', async () => {
+    // Upload succeeds
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'x-goog-upload-url': 'https://googleapis.com/upload/12345' }),
+      json: async () => ({}),
+      text: async () => '',
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ file: { uri: 'https://generativelanguage.googleapis.com/files/abc123' } }),
+      text: async () => '',
+    });
+    // Interactions fails
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => 'Permission denied',
+    });
+
+    await expect(
+      provider.transcribeFile('/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal)
+    ).rejects.toThrow('Google Gemini transcription failed: HTTP 403');
+  });
+
   it('throws when File API initiate fails', async () => {
-    // Initiate step fails
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 400,
@@ -168,30 +180,7 @@ describe('GoogleProvider', () => {
     });
 
     await expect(
-      provider.transcribeFile(
-        '/fake/large-audio.mp3',
-        { language: 'auto', diarize: true },
-        () => {},
-        new AbortController().signal
-      )
+      provider.transcribeFile('/fake/audio.mp3', { language: 'auto', diarize: true }, () => {}, new AbortController().signal)
     ).rejects.toThrow('Google File API initiate failed: HTTP 400');
-  });
-
-  it('passes language instruction for French', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{
-          content: { parts: [{ text: JSON.stringify({ utterances: [] }) }] },
-        }],
-      }),
-      text: async () => '',
-    });
-
-    await provider.transcribeFile('/fake/audio.mp3', { language: 'fr', diarize: true }, () => {}, new AbortController().signal);
-
-    const fetchOptions = mockFetch.mock.calls[0][1] as RequestInit;
-    const bodyStr = fetchOptions.body as string;
-    expect(bodyStr).toContain('French');
   });
 });

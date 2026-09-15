@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { initLogger } from './logger';
 import { registerAllHandlers } from './ipc/index';
-import { registerAppProtocol } from './ipc/protocol';
+import { registerAppScheme, registerAppProtocol } from './ipc/protocol';
 import { closeDb } from './db/index';
 import { registerLifecycleHandlers } from './app-lifecycle';
 
@@ -34,6 +34,10 @@ function createWindow(): BrowserWindow {
   log.info('Application window created');
   return win;
 }
+
+// registerAppScheme must be called before app.whenReady() — it uses
+// protocol.registerSchemesAsPrivileged which is only valid before the app is ready.
+registerAppScheme();
 
 app.whenReady().then(() => {
   log = initLogger(); // Safe: app is ready, getPath works (F9)

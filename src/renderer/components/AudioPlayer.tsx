@@ -16,7 +16,8 @@ const AudioPlayer = forwardRef<AudioPlayerRef, { src: string }>(
   function AudioPlayer({ src }, ref) {
     const { audioRef, playing, currentTimeMs, duration, playbackRate,
       seekTo, togglePlay, setPlaybackRate,
-      onTimeUpdate, onDurationChange, onPlay, onPause } = useAudioPlayer();
+      onTimeUpdate, onDurationChange, onPlay, onPause, onError,
+      onLoadStart, onLoadedMetadata, onStalled, onSuspend } = useAudioPlayer();
 
     useImperativeHandle(ref, () => ({
       seekTo: (ms) => { seekTo(ms); audioRef.current?.play(); },
@@ -28,7 +29,10 @@ const AudioPlayer = forwardRef<AudioPlayerRef, { src: string }>(
       <div className="audio-player-bar">
         <audio ref={audioRef} src={src}
           onTimeUpdate={onTimeUpdate} onDurationChange={onDurationChange}
-          onPlay={onPlay} onPause={onPause} preload="metadata" />
+          onPlay={onPlay} onPause={onPause} onError={onError}
+          onLoadStart={onLoadStart} onLoadedMetadata={onLoadedMetadata}
+          onStalled={onStalled} onSuspend={onSuspend}
+          preload="metadata" />
 
         <button
           className="btn btn-ghost btn-icon"

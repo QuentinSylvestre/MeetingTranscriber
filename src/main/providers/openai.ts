@@ -4,7 +4,14 @@ import log from 'electron-log';
 import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn } from './types';
 
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const MODEL = 'gpt-4o-transcribe-diarize';
+
+// gpt-4o-transcribe-diarize: dedicated diarization model (released April 2025).
+// Requires response_format="diarized_json" and chunking_strategy="auto" for
+// recordings over 30 seconds. Returns segments with speaker, start, end, text.
+// Requires plan-level access — throws a clear error on 403.
+//
+// Note: this model does not accept a language parameter.
+const MODEL_DIARIZE = 'gpt-4o-transcribe-diarize';
 
 export class OpenAIProvider implements TranscriptionProvider {
   name = 'openai';
@@ -17,14 +24,14 @@ export class OpenAIProvider implements TranscriptionProvider {
     onProgress: (status: string) => void,
     signal: AbortSignal
   ): Promise<TranscriptChunkResult[]> {
-    onProgress('Transcribing...');
+    if (!options.diarize) {
+      throw new Error('OpenAI provider requires diarize: true — speaker labels are the only supported output format');
+    }
 
     const fileBuffer = fs.readFileSync(filePath);
     const filename = path.basename(filePath);
     const fileSizeMb = Math.round(fileBuffer.length / 1024 / 1024);
 
-    // OpenAI hard limit: 25 MB. The chunker uses 1000s which is ~15 MB at 128 kbps.
-    // Log a warning if a chunk is unexpectedly large.
     if (fileSizeMb > 20) {
       log.warn(`OpenAI: chunk ${filename} is ${fileSizeMb} MB (soft limit 20 MB)`);
     }
@@ -34,12 +41,16 @@ export class OpenAIProvider implements TranscriptionProvider {
       '.mp3': 'audio/mpeg', '.mp4': 'audio/mp4', '.m4a': 'audio/mp4',
       '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
     };
+
+    onProgress('Transcribing (with diarization)...');
+
     const formData = new FormData();
     formData.append('file', new Blob([fileBuffer], { type: mimeType[ext] ?? 'audio/mpeg' }), filename);
-    formData.append('model', MODEL);
-    formData.append('response_format', 'verbose_json');
-    if (options.language !== 'auto') formData.append('language', options.language);
-    // Diarization is intrinsic to the model name; no separate parameter needed
+    formData.append('model', MODEL_DIARIZE);
+    formData.append('response_format', 'diarized_json');
+    // chunking_strategy=auto is required for recordings over 30 seconds.
+    // gpt-4o-transcribe-diarize does not support the language parameter.
+    formData.append('chunking_strategy', 'auto');
 
     const resp = await fetch(OPENAI_TRANSCRIBE_URL, {
       method: 'POST',
@@ -50,18 +61,23 @@ export class OpenAIProvider implements TranscriptionProvider {
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
+      if (resp.status === 403) {
+        throw new Error(
+          `OpenAI: your project does not have access to ${MODEL_DIARIZE}. ` +
+          `See the in-app guidance to enable it.`
+        );
+      }
       throw new Error(`OpenAI transcription failed: HTTP ${resp.status} ${errText.slice(0, 200)}`);
     }
 
+    // diarized_json response: { segments: [{ speaker, start, end, text }] }
     const result = (await resp.json()) as {
       segments?: Array<{ speaker?: string; start: number; end: number; text: string }>;
     };
 
     onProgress('Complete');
-    log.info(`OpenAI: ${result.segments?.length ?? 0} segments, ${filename}`);
+    log.info(`OpenAI diarize: ${result.segments?.length ?? 0} segments, ${filename}`);
 
-    // Return plain 'Speaker X' labels — runner.ts applies the 'Chunk N \u2013 ' prefix
-    // for multi-chunk jobs (needsChunkPrefix logic).
     const turns: SpeakerTurn[] = (result.segments ?? []).map((seg) => ({
       speakerLabel: `Speaker ${seg.speaker ?? '0'}`,
       startMs: Math.round(seg.start * 1000),

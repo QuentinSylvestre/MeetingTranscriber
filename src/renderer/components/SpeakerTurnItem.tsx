@@ -19,7 +19,18 @@ interface Props {
 export default function SpeakerTurnItem({ turn, displayName, onRename, onSeek }: Props): React.ReactElement {
   return (
     <div className="speaker-turn">
-      <span className="turn-time">{fmt(turn.start_ms)}</span>
+      <span
+        className="turn-time"
+        onClick={() => onSeek(turn.start_ms)}
+        role="button"
+        tabIndex={0}
+        title="Click to seek to this position"
+        style={{ cursor: 'pointer' }}
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onSeek(turn.start_ms)}
+        aria-label={`Seek to ${fmt(turn.start_ms)}`}
+      >
+        {fmt(turn.start_ms)}
+      </span>
       <SpeakerLabel displayName={displayName} onRename={onRename} onSeek={() => onSeek(turn.start_ms)} />
       <span className="turn-text selectable">{turn.text}</span>
     </div>
