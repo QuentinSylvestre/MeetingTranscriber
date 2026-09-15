@@ -13,7 +13,7 @@ const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
 interface Status { configured: boolean; testing: boolean; result: 'idle'|'valid'|'invalid'; error?: string; }
 
 export default function SettingsView(): React.ReactElement {
-  const { hasSecret, setSecret, testSecret } = useSettings();
+  const { hasSecret, setSecret, testSecret, getPreference, setPreference } = useSettings();
   const [inputs, setInputs] = useState<Record<ProviderName, string>>({ assemblyai:'', elevenlabs:'', openai:'', google:'' });
   const [status, setStatus] = useState<Record<ProviderName, Status>>({
     assemblyai: { configured: false, testing: false, result: 'idle' },
@@ -23,12 +23,37 @@ export default function SettingsView(): React.ReactElement {
   });
   const [show, setShow] = useState<Record<ProviderName, boolean>>({ assemblyai: false, elevenlabs: false, openai: false, google: false });
 
+  // Preferences state
+  const [defaultProvider, setDefaultProvider] = useState<ProviderName>('assemblyai');
+  const [defaultLanguage, setDefaultLanguage] = useState<'fr' | 'en'>('fr');
+  const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
   useEffect(() => {
     Promise.all(PROVIDER_NAMES.map(async p => {
       const configured = await hasSecret(SECRET_KEY_NAMES[p]);
       setStatus(prev => ({ ...prev, [p]: { ...prev[p], configured } }));
     })).catch(console.error);
   }, [hasSecret]);
+
+  // Load preferences on mount
+  useEffect(() => {
+    Promise.all([
+      getPreference('defaultProvider'),
+      getPreference('defaultLanguage'),
+      getPreference('appLanguage'),
+    ]).then(([prov, lang, appLang]) => {
+      // Cast via ProviderName check
+      const provVal = (PROVIDER_NAMES.includes(prov as ProviderName) ? prov : 'assemblyai') as ProviderName;
+      // Treat 'auto' as 'fr'
+      const langVal = (lang === 'fr' || lang === 'en') ? lang as 'fr' | 'en' : 'fr';
+      const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
+      setDefaultProvider(provVal);
+      setDefaultLanguage(langVal);
+      setAppLanguage(appLangVal);
+      setPrefsLoaded(true);
+    }).catch(console.error);
+  }, [getPreference]);
 
   const handleSave = async (p: ProviderName) => {
     const v = inputs[p].trim();
@@ -48,11 +73,77 @@ export default function SettingsView(): React.ReactElement {
     setStatus(prev => ({ ...prev, [p]: { ...prev[p], testing: false, result: r.valid ? 'valid' : 'invalid', error: r.error } }));
   };
 
+  const handleProviderChange = async (v: ProviderName) => {
+    await setPreference('defaultProvider', v);
+    setDefaultProvider(v);
+  };
+  const handleLanguageChange = async (v: 'fr' | 'en') => {
+    await setPreference('defaultLanguage', v);
+    setDefaultLanguage(v);
+  };
+  const handleAppLanguageChange = async (v: 'fr' | 'en') => {
+    await setPreference('appLanguage', v);
+    setAppLanguage(v);
+    // Phase 6 adds: setLang(v) here after importing useI18n
+  };
+
   return (
     <div>
       <div className="page-header">
         <div className="page-title">Settings</div>
         <div className="page-subtitle">Configure transcription providers and preferences</div>
+      </div>
+
+      {/* Transcription defaults card */}
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>Transcription defaults</h3>
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Provider</label>
+              <select
+                className="form-select"
+                value={defaultProvider}
+                onChange={e => void handleProviderChange(e.target.value as ProviderName)}
+                disabled={!prefsLoaded}
+              >
+                {PROVIDER_NAMES.map(p => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Language</label>
+              <select
+                className="form-select"
+                value={defaultLanguage}
+                onChange={e => void handleLanguageChange(e.target.value as 'fr' | 'en')}
+                disabled={!prefsLoaded}
+              >
+                <option value="fr">French</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* App language card */}
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>App language</h3>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Interface language</label>
+            <select
+              className="form-select"
+              value={appLanguage}
+              onChange={e => void handleAppLanguageChange(e.target.value as 'fr' | 'en')}
+              disabled={!prefsLoaded}
+              style={{ maxWidth: 200 }}
+            >
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <h3 style={{ marginBottom: 'var(--space-3)' }}>API Keys</h3>

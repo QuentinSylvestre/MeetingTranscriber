@@ -53,7 +53,7 @@ By default, recordings are saved to `Documents\MeetingTranscriber\`. You can cha
 
 1. Open the **Upload** view.
 2. Drop an audio file or click to browse. Supported formats: MP3, MP4, WAV, M4A, OGG.
-3. Select your provider, language, and optional title.
+3. Select your transcription language (defaults to your saved preference) and an optional title.
 4. Click **Transcribe**.
 
 ### Assigning speaker names
