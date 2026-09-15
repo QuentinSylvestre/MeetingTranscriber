@@ -106,8 +106,10 @@ describe('settings/store', () => {
   it('preferences default schema applied when file missing', async () => {
     const { readPreferences } = await import('../../src/main/settings/store');
     const prefs = readPreferences();
-    expect(prefs.defaultLanguage).toBe('auto');
+    expect(prefs.defaultLanguage).toBe('fr');
     expect(typeof prefs.recordingsFolder).toBe('string');
+    expect(prefs.defaultProvider).toBe('assemblyai');
+    expect(prefs.appLanguage).toBe('fr');
   });
 
   // testSecret returns 'not configured' when the key exists but has no stored value.

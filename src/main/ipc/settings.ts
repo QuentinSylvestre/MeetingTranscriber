@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import log from 'electron-log';
 import * as store from '../settings/store';
 import type { ProviderName, PreferenceKey, Preferences } from '../../shared/ipc-types';
+import { PROVIDER_NAMES } from '../../shared/ipc-types';
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:has-secret', (_event, { key }: { key: string }) => {
@@ -28,12 +29,11 @@ export function registerSettingsHandlers(): void {
 
   // S6: Runtime validation at the IPC boundary — removes `as never` type erasure.
   ipcMain.handle('settings:set-preference', (_event, { key, value }: { key: PreferenceKey; value: unknown }) => {
-    if (key === 'recordingsFolder' && typeof value !== 'string') {
-      return;
-    }
-    if (key === 'defaultLanguage' && !['fr', 'en', 'auto'].includes(value as string)) {
-      return;
-    }
+    if (key === 'recordingsFolder' && typeof value !== 'string') { return; }
+    else if (key === 'defaultLanguage' && !['fr', 'en', 'auto'].includes(value as string)) { return; }
+    else if (key === 'defaultProvider' && !(PROVIDER_NAMES as string[]).includes(value as string)) { return; }
+    else if (key === 'appLanguage' && !(['fr', 'en'] as string[]).includes(value as string)) { return; }
+    else if (!(['recordingsFolder', 'defaultLanguage', 'defaultProvider', 'appLanguage'] as string[]).includes(key)) { return; }
     store.setPreference(key, value as Preferences[typeof key]);
   });
 

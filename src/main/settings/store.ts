@@ -10,7 +10,9 @@ import { SECRET_KEY_NAMES } from '../../shared/ipc-types';
 // In src/main/index.ts it is imported via registerAllHandlers() which is inside app.whenReady().
 const DEFAULT_PREFERENCES: Preferences = {
   recordingsFolder: path.join(app.getPath('documents'), 'MeetingTranscriber'),
-  defaultLanguage: 'auto',
+  defaultLanguage: 'fr',   // changed from 'auto'
+  defaultProvider: 'assemblyai',
+  appLanguage: 'fr',
 };
 
 function getSecretsPath(): string {

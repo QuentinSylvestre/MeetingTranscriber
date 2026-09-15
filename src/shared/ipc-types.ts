@@ -208,11 +208,13 @@ export type InvokeChannel = keyof IpcChannels;
 
 export type ProviderName = 'assemblyai' | 'elevenlabs' | 'openai' | 'google';
 
-export type PreferenceKey = 'recordingsFolder' | 'defaultLanguage';
+export type PreferenceKey = 'recordingsFolder' | 'defaultLanguage' | 'defaultProvider' | 'appLanguage';
 
 export interface Preferences {
   recordingsFolder: string;
   defaultLanguage: 'fr' | 'en' | 'auto';
+  defaultProvider: ProviderName;
+  appLanguage: 'fr' | 'en';
 }
 
 export const PROVIDER_NAMES: ProviderName[] = ['assemblyai', 'elevenlabs', 'openai', 'google'];
