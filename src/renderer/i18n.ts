@@ -108,6 +108,13 @@ export const en = {
   // Settings Export
   settings_export_heading: 'Export',
   settings_include_timestamps_label: 'Include timestamps in copy/export',
+  // Settings Accessibility
+  settings_fontsize_heading: 'Accessibility',
+  settings_fontsize_label: 'Text size',
+  settings_fontsize_medium: 'Medium (default)',
+  settings_fontsize_large: 'Large',
+  settings_fontsize_xl: 'Extra large',
+  settings_fontsize_xxl: 'XXL',
 } as const;
 
 export const fr: Record<I18nKey, string> = {
@@ -205,4 +212,10 @@ export const fr: Record<I18nKey, string> = {
   error_btn_reload: 'Redémarrer l\'application',
   settings_export_heading: 'Export',
   settings_include_timestamps_label: 'Inclure les horodatages lors de la copie/export',
+  settings_fontsize_heading: 'Accessibilité',
+  settings_fontsize_label: 'Taille du texte',
+  settings_fontsize_medium: 'Moyen (défaut)',
+  settings_fontsize_large: 'Grand',
+  settings_fontsize_xl: 'Très grand',
+  settings_fontsize_xxl: 'XXL',
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SettingsView from './views/SettingsView';
 import RecordView from './views/RecordView';
 import UploadView from './views/UploadView';
@@ -18,6 +18,19 @@ export default function App(): React.ReactElement {
   // True only while a transcription job is actively running (progress view).
   // Viewing a completed transcript from history must not trigger the indicator.
   const [isTranscribing, setIsTranscribing] = useState(false);
+
+  // Apply stored font-size preference on mount via CSS variable.
+  useEffect(() => {
+    let alive = true;
+    (window.electronAPI.invoke('settings:get-preference', { key: 'fontSize' }) as Promise<{ value: unknown }>)
+      .then(({ value }) => {
+        if (!alive) return;
+        const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 14;
+        document.documentElement.style.setProperty('--font-size-base', `${size}px`);
+      })
+      .catch(console.error);
+    return () => { alive = false; };
+  }, []);
 
   // Called by RecordView when a recording has been stopped, flushed, and a
   // transcription job has been queued. Navigate straight to progress.

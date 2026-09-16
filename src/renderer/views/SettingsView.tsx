@@ -23,6 +23,7 @@ export default function SettingsView(): React.ReactElement {
   const [defaultLanguage, setDefaultLanguage] = useState<'fr' | 'en'>('fr');
   const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
+  const [fontSize, setFontSize] = useState<number>(14);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -47,17 +48,20 @@ export default function SettingsView(): React.ReactElement {
       getPreference('defaultLanguage'),
       getPreference('appLanguage'),
       getPreference('includeTimestamps'),
-    ]).then(([prov, lang, appLang, ts]) => {
+      getPreference('fontSize'),
+    ]).then(([prov, lang, appLang, ts, fSize]) => {
       // Cast via ProviderName check
       const provVal = (PROVIDER_NAMES.includes(prov as ProviderName) ? prov : 'assemblyai') as ProviderName;
       // Treat 'auto' as 'fr'
       const langVal = (lang === 'fr' || lang === 'en') ? lang as 'fr' | 'en' : 'fr';
       const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
       const tsVal = typeof ts === 'boolean' ? ts : true;
+      const sizeVal = [14, 16, 18, 20].includes(fSize as number) ? (fSize as number) : 14;
       setDefaultProvider(provVal);
       setDefaultLanguage(langVal);
       setAppLanguage(appLangVal);
       setIncludeTimestamps(tsVal);
+      setFontSize(sizeVal);
       setPrefsLoaded(true);
     }).catch(console.error);
   }, []);
@@ -113,6 +117,14 @@ export default function SettingsView(): React.ReactElement {
     } catch (e) {
       console.error('Failed to save includeTimestamps preference', e);
     }
+  };
+
+  const handleFontSizeChange = async (v: number) => {
+    try {
+      await setPreference('fontSize', v);
+      setFontSize(v);
+      document.documentElement.style.setProperty('--font-size-base', `${v}px`);
+    } catch (e) { console.error('Failed to save fontSize preference', e); }
   };
 
   return (
@@ -190,6 +202,28 @@ export default function SettingsView(): React.ReactElement {
               />
               {t('settings_include_timestamps_label')}
             </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Accessibility card */}
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('settings_fontsize_heading')}</h3>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">{t('settings_fontsize_label')}</label>
+            <select
+              className="form-select"
+              value={fontSize}
+              onChange={e => void handleFontSizeChange(Number(e.target.value))}
+              disabled={!prefsLoaded}
+              style={{ maxWidth: 200 }}
+            >
+              <option value={14}>{t('settings_fontsize_medium')}</option>
+              <option value={16}>{t('settings_fontsize_large')}</option>
+              <option value={18}>{t('settings_fontsize_xl')}</option>
+              <option value={20}>{t('settings_fontsize_xxl')}</option>
+            </select>
           </div>
         </div>
       </div>
