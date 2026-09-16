@@ -52,6 +52,19 @@ export class AssemblyAIProvider implements TranscriptionProvider {
       // Optional natural-language guidance for improved accuracy on domain-specific content.
       // Particularly useful for U3.5 Pro (e.g. "French business meeting with technical vocabulary").
       ...(options.prompt != null && options.prompt.trim() !== '' ? { prompt: options.prompt } : {}),
+      // Speaker-count hint — mutually exclusive per AssemblyAI's API, never both.
+      // AssemblyAI requires speaker_labels: true for either field to take effect,
+      // so the hint is only sent when diarization is actually enabled.
+      ...(options.diarize && options.speakerCountHint?.mode === 'exact'
+        ? { speakers_expected: options.speakerCountHint.count }
+        : options.diarize && options.speakerCountHint?.mode === 'range'
+        ? {
+            speaker_options: {
+              min_speakers_expected: options.speakerCountHint.min,
+              max_speakers_expected: options.speakerCountHint.max,
+            },
+          }
+        : {}),
     };
 
     const createResp = await fetch(`${BASE_URL}/v2/transcript`, {

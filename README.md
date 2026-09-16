@@ -45,16 +45,18 @@ By default, recordings are saved to `Documents\MeetingTranscriber\`. You can cha
 
 1. Open the **Record** view.
 2. Select your microphone from the dropdown.
-3. Click **Record**. Pause/resume as needed.
-4. Click **Stop** when done.
-5. The app will prompt you to transcribe immediately.
+3. If AssemblyAI is your active provider, optionally set the number of speakers (exact count or a min/max range) to improve diarization accuracy.
+4. Click **Record**. Pause/resume as needed.
+5. Click **Stop** when done.
+6. The app will prompt you to transcribe immediately.
 
 ### Upload an existing recording
 
 1. Open the **Upload** view.
 2. Drop an audio file or click to browse. Supported formats: MP3, MP4, WAV, M4A, OGG.
 3. Select your transcription language (defaults to your saved preference) and an optional title.
-4. Click **Transcribe**.
+4. If AssemblyAI is your active provider, optionally set the number of speakers (exact count or a min/max range) to improve diarization accuracy.
+5. Click **Transcribe**.
 
 ### Assigning speaker names
 

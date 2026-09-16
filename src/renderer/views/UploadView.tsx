@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
+import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -29,6 +30,14 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
   const [submitting, setSubmitting] = useState(false);
 
   const { getPreference, hasSecret } = useSettings();
+  const {
+    speakerMode, setSpeakerMode,
+    speakerExact, setSpeakerExact,
+    speakerMin, setSpeakerMin,
+    speakerMax, setSpeakerMax,
+    speakerError,
+    buildSpeakerCountHint,
+  } = useSpeakerCountHint();
 
   useEffect(() => {
     Promise.all([
@@ -76,6 +85,8 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
       setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
+    const { hint, error: hintError } = buildSpeakerCountHint();
+    if (hintError) { setError(hintError); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -103,6 +114,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         provider: selectedProvider,
         model: 'default',
         language,
+        speakerCountHint: hint,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -147,7 +159,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
         )}
       </div>
 
-      {error && <p className="text-error text-sm mb-4" role="alert">{error}</p>}
+      {error && <p className="text-error text-sm mb-4" role="alert" id="form-error">{error}</p>}
 
       {/* Options */}
       <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
@@ -165,6 +177,36 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
               <option value="en">{t('lang_option_en')}</option>
             </select>
           </div>
+
+          {selectedProvider === 'assemblyai' && (
+            <div className="form-group">
+              <label className="form-label">{t('speaker_count_label')}</label>
+              <select
+                className="form-select"
+                value={speakerMode}
+                onChange={e => setSpeakerMode(e.target.value as 'none' | 'exact' | 'range')}
+              >
+                <option value="none">{t('speaker_count_mode_none')}</option>
+                <option value="exact">{t('speaker_count_mode_exact')}</option>
+                <option value="range">{t('speaker_count_mode_range')}</option>
+              </select>
+              {speakerMode === 'exact' && (
+                <input
+                  className="form-input" type="number" min={1} max={20}
+                  value={speakerExact} onChange={e => setSpeakerExact(e.target.value)}
+                  placeholder={t('speaker_count_exact_placeholder')}
+                  aria-invalid={speakerError !== null}
+                  aria-describedby={speakerError !== null ? 'form-error' : undefined}
+                />
+              )}
+              {speakerMode === 'range' && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">{t('upload_title_label')}</label>

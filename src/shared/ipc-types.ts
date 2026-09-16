@@ -34,6 +34,10 @@ export interface SpeakerMapping {
   display_name: string;
 }
 
+export type SpeakerCountHint =
+  | { mode: 'exact'; count: number }
+  | { mode: 'range'; min: number; max: number };
+
 export interface ChunkResult {
   paths: string[];
   chunkDurationMs: number; // duration per chunk in ms (Infinity if no chunking)
@@ -184,6 +188,7 @@ export interface IpcChannels {
       model: string;
       language: 'fr' | 'en' | 'auto';
       durationS?: number;
+      speakerCountHint?: SpeakerCountHint;
     };
     response: void;
   };

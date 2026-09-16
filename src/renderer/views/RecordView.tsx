@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRecorder } from '../hooks/useRecorder';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
+import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -30,6 +31,14 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   const { getPreference, hasSecret } = useSettings();
   const { status, durationMs, error: recorderError, start, pause, resume, stop } = useRecorder((_jobId) => {});
   const [error, setError] = useState<string | null>(null);
+  const {
+    speakerMode, setSpeakerMode,
+    speakerExact, setSpeakerExact,
+    speakerMin, setSpeakerMin,
+    speakerMax, setSpeakerMax,
+    speakerError,
+    buildSpeakerCountHint,
+  } = useSpeakerCountHint();
 
   useEffect(() => {
     const enumerate = () =>
@@ -75,6 +84,9 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
+    const { hint, error: hintError } = buildSpeakerCountHint();
+    if (hintError) { setError(hintError); return; }
+    setError(null);
     const { audioPath } = await stop();
     const jobId = currentJobId;
     setCurrentJobId(null);
@@ -87,6 +99,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
         provider: selectedProvider,
         model: 'universal',
         language: selectedLanguage,
+        speakerCountHint: hint,
       });
       onJobStarted?.(jobId, audioPath);
     } catch (err) {
@@ -147,7 +160,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
         )}
       </div>
 
-      {displayError && <p className="text-error text-sm mb-4">{displayError}</p>}
+      {displayError && <p className="text-error text-sm mb-4" role="alert" id="form-error">{displayError}</p>}
 
       {/* Config */}
       <div className="card" style={{ maxWidth: 520 }}>
@@ -183,6 +196,37 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
               <option value="en">{t('lang_option_en')}</option>
             </select>
           </div>
+
+          {selectedProvider === 'assemblyai' && (
+            <div className="form-group">
+              <label className="form-label">{t('speaker_count_label')}</label>
+              <select
+                className="form-select"
+                value={speakerMode}
+                onChange={e => setSpeakerMode(e.target.value as 'none' | 'exact' | 'range')}
+                disabled={!isIdle}
+              >
+                <option value="none">{t('speaker_count_mode_none')}</option>
+                <option value="exact">{t('speaker_count_mode_exact')}</option>
+                <option value="range">{t('speaker_count_mode_range')}</option>
+              </select>
+              {speakerMode === 'exact' && (
+                <input
+                  className="form-input" type="number" min={1} max={20}
+                  value={speakerExact} onChange={e => setSpeakerExact(e.target.value)}
+                  placeholder={t('speaker_count_exact_placeholder')}
+                  aria-invalid={speakerError !== null}
+                  aria-describedby={speakerError !== null ? 'form-error' : undefined}
+                />
+              )}
+              {speakerMode === 'range' && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--crust)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--overlay0)' }}>
             <span>🔇</span>

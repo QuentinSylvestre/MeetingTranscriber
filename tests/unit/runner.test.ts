@@ -113,10 +113,14 @@ describe('runner chunk prefix logic', () => {
       provider: 'assemblyai',
       model: 'universal',
       language: 'fr',
+      speakerCountHint: { mode: 'exact', count: 4 },
     });
 
     const saved = vi.mocked(saveTranscript).mock.calls[0][0] as Array<{ speaker_label: string }>;
     expect(saved).toHaveLength(1);
     expect(saved[0].speaker_label).toBe('Speaker A'); // No chunk prefix
+
+    const transcribeOpts = mockAdapter.transcribeFile.mock.calls[0][1] as { speakerCountHint?: unknown };
+    expect(transcribeOpts.speakerCountHint).toEqual({ mode: 'exact', count: 4 });
   });
 });

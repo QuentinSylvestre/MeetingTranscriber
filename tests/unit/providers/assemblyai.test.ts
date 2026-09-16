@@ -101,4 +101,55 @@ describe('AssemblyAIProvider', () => {
     );
     expect(results[0].chunkIndex).toBe(0);
   });
+
+  it('sends speakers_expected for exact-mode speakerCountHint', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_005' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'completed', utterances: [] }) });
+
+    await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true, speakerCountHint: { mode: 'exact', count: 4 } },
+      () => {},
+      new AbortController().signal
+    );
+
+    const createCallBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
+    expect(createCallBody.speakers_expected).toBe(4);
+    expect(createCallBody.speaker_options).toBeUndefined();
+  });
+
+  it('sends speaker_options for range-mode speakerCountHint', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_006' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'completed', utterances: [] }) });
+
+    await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true, speakerCountHint: { mode: 'range', min: 2, max: 6 } },
+      () => {},
+      new AbortController().signal
+    );
+
+    const createCallBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
+    expect(createCallBody.speaker_options).toEqual({ min_speakers_expected: 2, max_speakers_expected: 6 });
+    expect(createCallBody.speakers_expected).toBeUndefined();
+  });
+
+  it('sends neither key when speakerCountHint is unset', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_007' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'completed', utterances: [] }) });
+
+    await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true },
+      () => {},
+      new AbortController().signal
+    );
+
+    const createCallBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
+    expect(createCallBody.speakers_expected).toBeUndefined();
+    expect(createCallBody.speaker_options).toBeUndefined();
+  });
 });

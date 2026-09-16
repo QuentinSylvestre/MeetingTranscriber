@@ -7,7 +7,7 @@ import { chunkAudio } from '../chunker/index';
 import { createJob, updateJobStatus } from '../db/jobs';
 import { saveTranscript } from '../db/transcript';
 import { getPreference } from '../settings/store';
-import type { ProviderName, TranscriptTurn } from '../../shared/ipc-types';
+import type { ProviderName, TranscriptTurn, SpeakerCountHint } from '../../shared/ipc-types';
 
 /** One active job at a time. */
 let _activeJobId: string | null = null;
@@ -27,13 +27,14 @@ export interface StartJobOptions {
   model: string;
   language: 'fr' | 'en' | 'auto';
   durationS?: number;
+  speakerCountHint?: SpeakerCountHint;
 }
 
 export async function startJob(opts: StartJobOptions): Promise<void> {
   if (_activeJobId !== null) throw new Error(`Job ${_activeJobId} is already running`);
 
   const {
-    jobId, title, audioPath, provider, model, language, durationS,
+    jobId, title, audioPath, provider, model, language, durationS, speakerCountHint,
   } = opts;
 
   _activeJobId = jobId;
@@ -107,7 +108,7 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
 
       const chunkResults = await providerAdapter.transcribeFile(
         chunkPath,
-        { language, diarize: true },
+        { language, diarize: true, speakerCountHint },
         (s) => sendProgress(`Chunk ${i + 1}: ${s}`),
         signal
       );

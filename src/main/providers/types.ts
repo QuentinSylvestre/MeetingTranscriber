@@ -1,8 +1,12 @@
+import type { SpeakerCountHint } from '../../shared/ipc-types';
+
 export interface TranscriptionOptions {
   language: 'fr' | 'en' | 'auto';
   diarize: boolean;
   /** Optional natural-language guidance passed to providers that support it (e.g. AssemblyAI U3.5 Pro). */
   prompt?: string;
+  /** Optional speaker-count hint, currently read only by assemblyai.ts. */
+  speakerCountHint?: SpeakerCountHint;
 }
 
 export interface SpeakerTurn {
