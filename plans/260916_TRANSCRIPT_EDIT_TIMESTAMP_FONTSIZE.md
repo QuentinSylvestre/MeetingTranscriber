@@ -1,7 +1,7 @@
 # Transcript Edit, Timestamp Toggle, Font Size
 
 > **Date**: 2026-09-16
-> **Status**: Draft  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Status**: In Progress  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Three user-facing features: inline transcript text editing with reset, copy/export without timestamp preference, app-wide font size preference
 > **Estimated effort**: 1-2 days
@@ -417,16 +417,16 @@ it('resetTranscript restores text from original_text for all turns', async () =>
 ```
 
 **Exit criteria**:
-- [ ] `db.sqlite` deleted from userData; app restarts cleanly with new schema
-- [ ] `transcript_turns` table includes `original_text TEXT NOT NULL` (confirmed by `updateTurnText` test asserting `original_text === 'Original'` after edit)
-- [ ] `001_initial.sql` updated to match `MIGRATION_001` string in `index.ts`
-- [ ] Double-clicking a turn's text opens a textarea pre-populated with current text
-- [ ] Blurring commits; text persists across view reload (History → reopen transcript)
-- [ ] Escape cancels and restores last committed text (not `original_text`)
-- [ ] Blank textarea on blur restores previous text (no empty turn saved)
-- [ ] Edited turns show left-border accent indicator; indicator absent on unedited turns
-- [ ] "Reset transcript" button disabled with fresh transcript; enabled after editing; confirmation prompt shown on click; confirming restores all turns; indicator clears
-- [ ] `npm test` passes including both new test cases and the two fixed existing fixtures
+- [x] `db.sqlite` deleted from userData; app restarts cleanly with new schema
+- [x] `transcript_turns` table includes `original_text TEXT NOT NULL` (confirmed by `updateTurnText` test asserting `original_text === 'Original'` after edit)
+- [x] `001_initial.sql` updated to match `MIGRATION_001` string in `index.ts`
+- [x] Double-clicking a turn's text opens a textarea pre-populated with current text
+- [x] Blurring commits; text persists across view reload (History → reopen transcript)
+- [x] Escape cancels and restores last committed text (not `original_text`)
+- [x] Blank textarea on blur restores previous text (no empty turn saved)
+- [x] Edited turns show left-border accent indicator; indicator absent on unedited turns
+- [x] "Reset transcript" button disabled with fresh transcript; enabled after editing; confirmation prompt shown on click; confirming restores all turns; indicator clears
+- [x] `npm test` passes including both new test cases and the two fixed existing fixtures
 
 ---
 
@@ -795,13 +795,36 @@ Manual checklist:
 
 ## 9) Implementation Divergences from Plan
 
-<Reserved — filled during implementation>
+1. **DB migration strategy (Phase 1)**: Plan specified big-bang replacement (delete `db.sqlite`, re-create from schema). Instead, performed in-place `ALTER TABLE … ADD COLUMN original_text` + `UPDATE` backfill on the existing dev database. Rationale: user had 3 completed transcription jobs (438 turns) they did not want to lose. All existing turns have `original_text = text` (correct initial state). Behaviorally identical to a fresh schema for all new writes. Backup saved at `db.sqlite.bak_20260916_182200`.
 
 ## Follow-up Work (Deferred)
 
 <Nothing deferred at plan time.>
 
 ## Review Log
+
+### 2026-09-16 — Implementation Review (after Phase 1, persona: Senior engineer, Reliability engineer)
+
+Implementation health: Green.
+7 findings (0 High, 2 Medium, 5 Low). All resolved across 2 auto-fix cycles + 1 user-directed fix.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | Medium | `updateTurnText`/`resetTranscript` had no `try/catch`; IPC failures silently swallowed; `error` state never set | Fixed — added `try/catch` calling `setError` in both callbacks (c9cb703) |
+| 2 | Medium | Reset during active edit left `editing=true`; subsequent blur saved reset text as a user edit | Fixed — draft sync `useEffect` now also calls `setEditing(false)` (c9cb703) |
+| 3 | Low | `.speaker-turn--edited` `padding-left` shifted edited turn content rightward vs unedited turns | Fixed — removed `padding-left`; used `margin-left: -2px` (c9cb703); then replaced with `box-shadow: inset` (8056c6f) |
+| 4 | Low | `commitEdit` compared `trimmed !== turn.text` instead of `turn.text.trim()`; trailing whitespace in stored text caused spurious edits | Fixed — comparison uses `turn.text.trim()` (c9cb703) |
+| 5 | Low | `updateTurnText` DB call returned void with no affected-rows check; stale ID silently no-oped | Fixed — checks `result.changes === 0` and throws (c9cb703) |
+| 6 | Low | Component unmount while textarea focused would fire `commitEdit` on a stale turn | Accepted — React 18 `setState` safe after unmount; no alive-guard pattern in sibling hooks |
+| 7 | Low | `startEdit` `setTimeout` not cleared on unmount | Fixed — `focusTimerRef` cleanup `useEffect` added (c9cb703) |
+
+Cycle 2 introduced one new Low (margin-left clipped by implicit overflow-x): fixed in 8056c6f using `box-shadow: inset`.
+QA: PASS (user runtime verification 2026-09-16).
+
+#### Implementation notes
+
+Implementation (2026-09-16, code: 08732c7)
+Added `original_text TEXT NOT NULL` to `transcript_turns` in both `001_initial.sql` and the `MIGRATION_001` string in `index.ts`. Updated `saveTranscript` to bind `@text` twice (both `text` and `original_text` columns). Added `updateTurnText` (UPDATE with affected-rows check) and `resetTranscript` (transaction-wrapped UPDATE + SELECT) to `transcript.ts`. Registered both as new IPC handlers in `db.ts`. Extended `useTranscript` with `updateTurnText` and `resetTranscript` callbacks (await-then-patch pattern, try/catch to `setError`). Rewrote `SpeakerTurnItem` with double-click-to-textarea editing: `draft` state, auto-size `useEffect`, blur-commit with trim guard, Escape-cancel, `setEditing(false)` in the `turn.text` sync effect, `focusTimerRef` cleanup. Added `.speaker-turn--edited` (box-shadow inset accent) and `.turn-text-editor` CSS rules. Wired Reset button in `TranscriptView` header (`window.confirm` guard, `hasEdits` disabled state). Added 4 i18n keys in both `en` and `fr`. Fixed 2 existing `db.test.ts` fixtures missing `original_text`; added `updateTurnText` and `resetTranscript` test cases. Dev DB migrated in-place (ALTER TABLE + backfill) rather than deleted — 438 turns preserved with `original_text = text`.
 
 ### 2026-09-16 — Plan creation review (via /qplan, high effort)
 
