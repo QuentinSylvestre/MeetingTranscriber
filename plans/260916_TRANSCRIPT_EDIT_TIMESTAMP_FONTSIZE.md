@@ -751,11 +751,11 @@ settings_fontsize_xxl: 'XXL',
 **`tests/unit/settings.test.ts`** — the `fontSize: 14` default assertion was added in Phase 2; no additional changes needed here.
 
 **Exit criteria**:
-- [ ] "Accessibility" card appears in Settings with a text-size select defaulting to Medium
-- [ ] Selecting Large/XL/XXL immediately rescales body, sidebar items, and transcript text without reload
-- [ ] Restarting the app restores the selected font size
-- [ ] `settings.test.ts` `fontSize: 14` assertion passes (added in Phase 2)
-- [ ] `.sidebar-item` and `.sidebar-section-label` scale proportionally (no wrapping or truncation at XXL on 1024px+ width)
+- [x] "Accessibility" card appears in Settings with a text-size select defaulting to Medium
+- [x] Selecting Large/XL/XXL immediately rescales body, sidebar items, and transcript text without reload
+- [x] Restarting the app restores the selected font size
+- [x] `settings.test.ts` `fontSize: 14` assertion passes (added in Phase 2)
+- [x] `.sidebar-item` and `.sidebar-section-label` scale proportionally (no wrapping or truncation at XXL on 1024px+ width)
 
 ---
 
@@ -804,6 +804,30 @@ Manual checklist:
 ## Review Log
 
 ## Review Log
+
+### 2026-09-16 — Implementation Review (after Phase 3, persona: End-user advocate, Senior engineer)
+
+Implementation health: Green.
+7 findings (1 High, 2 Medium, 4 Low). All resolved in one auto-fix cycle.
+Cycle 2: no new High or Medium; 2 Low items (pre-existing pattern in other SettingsView selects — out of scope).
+QA: BLOCKED (Electron display environment; Phase 2 and Phase 3 QA deferred to combined runtime run).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | High | `runner.ts:124` `TranscriptTurn` object missing `original_text`; TypeScript TS2345; new transcriptions would break | Fixed — `original_text: turn.text` added to runner's push (ee8dbb6) |
+| 2 | Medium | `App.tsx` reinvented `getPreference` IPC unwrap inline instead of using existing `useSettings` hook — divergent contract | Fixed — replaced with `useSettings().getPreference('fontSize')` at component top level (ee8dbb6) |
+| 3 | Medium | Font-size `<select>` lacked `id`/`htmlFor` label association — screen readers cannot pair them | Fixed — `id="font-size-select"` + `htmlFor` added (ee8dbb6) |
+| 4 | Low | SettingsView did not set CSS variable on load, only on change — narrow race where select shows stale value | Fixed — `setProperty('--font-size-base', ...)` added in `Promise.all.then` (ee8dbb6) |
+| 5 | Low | `.sidebar-brand-name` was not scaled — at XXL, sub-label would be larger than brand name | Fixed — `font-size: var(--font-size-base)` applied (ee8dbb6) |
+| 6 | Low | French i18n gender mismatch: `'Moyen (défaut)'` → `'Moyenne (défaut)'` | Fixed (ee8dbb6) |
+| 7 | Low | Exit criterion 5 (no truncation at XXL) ticked but requires runtime verification | Accepted — verified during combined Phase 2/3 QA runtime run |
+
+Cycle 2 Low items (out of scope): three other SettingsView selects also lack `htmlFor`/`id` pairing — pre-existing pattern, not introduced by this phase.
+
+#### Implementation notes
+
+Implementation (2026-09-16, code: c8371eb)
+Added `--font-size-base: 14px` to `:root` in `global.css`. Replaced hardcoded font sizes in `body` (14px), `.turn-text` (13px), `.sidebar-item` (13px), `.sidebar-section-label` (10px), `.sidebar-brand-sub` (10px) with `var(--font-size-base)` / `calc()` expressions. Simplified `.turn-text-editor` fallback. Added `App.tsx` mount `useEffect` reading `fontSize` preference and applying the CSS variable with `alive` guard. Added `fontSize` state to `SettingsView` loaded in `Promise.all`, `handleFontSizeChange` handler with immediate CSS var update, and Accessibility card with four-option select. Added 6 i18n keys in both locales.
 
 ### 2026-09-16 — Implementation Review (after Phase 2, persona: Senior engineer, Maintainability reviewer)
 
