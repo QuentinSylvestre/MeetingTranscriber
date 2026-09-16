@@ -63,6 +63,7 @@ export default function SettingsView(): React.ReactElement {
       setIncludeTimestamps(tsVal);
       setFontSize(sizeVal);
       document.documentElement.style.setProperty('--font-size-base', `${sizeVal}px`);
+      document.documentElement.style.setProperty('--font-size-ui', `${sizeVal - 1}px`);
       setPrefsLoaded(true);
     }).catch(console.error);
   }, []);
@@ -125,6 +126,7 @@ export default function SettingsView(): React.ReactElement {
       await setPreference('fontSize', v);
       setFontSize(v);
       document.documentElement.style.setProperty('--font-size-base', `${v}px`);
+      document.documentElement.style.setProperty('--font-size-ui', `${v - 1}px`);
     } catch (e) { console.error('Failed to save fontSize preference', e); }
   };
 

@@ -22,13 +22,15 @@ export default function App(): React.ReactElement {
 
   const { getPreference } = useSettings();
 
-  // Apply stored font-size preference on mount via CSS variable.
+  // Apply stored font-size preference on mount via CSS variables.
+  // Two tiers: --font-size-base (content) and --font-size-ui (chrome = base−1px).
   useEffect(() => {
     let alive = true;
     getPreference('fontSize').then((value) => {
       if (!alive) return;
       const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 14;
       document.documentElement.style.setProperty('--font-size-base', `${size}px`);
+      document.documentElement.style.setProperty('--font-size-ui', `${size - 1}px`);
     }).catch(console.error);
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

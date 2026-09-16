@@ -57,8 +57,11 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  /* Font size (user preference — updated dynamically by App.tsx on mount) */
+  /* Font size (user preference — updated dynamically by App.tsx on mount)
+     --font-size-base : content text (transcript, body copy)
+     --font-size-ui   : UI chrome (buttons, inputs, labels) — set to base−1px by JS */
   --font-size-base: 14px;
+  --font-size-ui:   13px;
 
   /* Radii */
   --radius-sm: 4px;
@@ -115,7 +118,7 @@ body {
 /* ── Typography ────────────────────────────────────────── */
 h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); }
 h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; color: var(--text); }
-h3 { font-size: 13px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--overlay2); }
+h3 { font-size: var(--font-size-ui); font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--overlay2); }
 
 p  { color: var(--subtext0); line-height: 1.6; }
 
@@ -128,7 +131,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
   border: none;
   border-radius: var(--radius-sm);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
   cursor: pointer;
   transition: filter var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
@@ -144,14 +147,14 @@ p  { color: var(--subtext0); line-height: 1.6; }
 .btn-danger    { background: var(--error);    color: var(--base); }
 .btn-ghost     { background: var(--surface1); color: var(--text); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface2); filter: none; }
-.btn-sm  { padding: 4px 10px; font-size: 12px; }
-.btn-lg  { padding: 10px 22px; font-size: 14px; }
+.btn-sm  { padding: 4px 10px; font-size: calc(var(--font-size-ui) - 1px); }
+.btn-lg  { padding: 10px 22px; font-size: var(--font-size-base); }
 .btn-icon { padding: 6px 10px; min-width: 32px; justify-content: center; }
 
 /* ── Form Controls ─────────────────────────────────────── */
 .form-label {
   display: block;
-  font-size: 12px;
+  font-size: calc(var(--font-size-ui) - 1px);
   font-weight: 500;
   color: var(--subtext0);
   margin-bottom: var(--space-1);
@@ -167,7 +170,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   appearance: none;
@@ -209,7 +212,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
   gap: 4px;
   padding: 2px 8px;
   border-radius: 99px;
-  font-size: 11px;
+  font-size: calc(var(--font-size-ui) - 2px);
   font-weight: 600;
 }
 .badge-success { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
@@ -360,7 +363,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 }
 
 .page-subtitle {
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   color: var(--overlay1);
   margin-top: 4px;
 }
@@ -441,7 +444,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 }
 
 .provider-name {
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
   color: var(--text);
 }
@@ -468,7 +471,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 .job-card:hover { border-color: var(--surface1); background: color-mix(in srgb, var(--surface0) 50%, var(--mantle)); }
 
 .job-title {
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
   color: var(--text);
   margin-bottom: 2px;
@@ -478,7 +481,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 }
 
 .job-meta {
-  font-size: 11px;
+  font-size: calc(var(--font-size-ui) - 2px);
   color: var(--overlay1);
   display: flex;
   align-items: center;
@@ -587,7 +590,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 }
 
 .speaker-name {
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
   color: var(--accent);
   min-width: 100px;
@@ -628,7 +631,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 
 .speaker-rename-input {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
   color: var(--text);
   background: var(--surface0);
@@ -690,7 +693,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 .mt-6   { margin-top: var(--space-6); }
 .mb-4   { margin-bottom: var(--space-4); }
 .mb-6   { margin-bottom: var(--space-6); }
-.text-sm   { font-size: 12px; }
+.text-sm   { font-size: calc(var(--font-size-ui) - 1px); }
 .text-muted { color: var(--overlay1); }
 .text-error { color: var(--error); }
 .text-success { color: var(--success); }
