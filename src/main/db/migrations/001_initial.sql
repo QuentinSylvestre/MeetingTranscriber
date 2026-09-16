@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS transcript_turns (
   speaker_label TEXT NOT NULL,
   start_ms INTEGER NOT NULL,
   end_ms INTEGER NOT NULL,
-  text TEXT NOT NULL
+  text TEXT NOT NULL,
+  original_text TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS speaker_mappings (

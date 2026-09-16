@@ -47,4 +47,12 @@ export function registerDbHandlers(): void {
   ipcMain.handle('db:get-speaker-mappings', (_event, { job_id }: { job_id: string }) => {
     return transcript.getSpeakerMappings(job_id);
   });
+
+  ipcMain.handle('db:update-turn-text', (_event, { id, text }: { id: string; text: string }) => {
+    transcript.updateTurnText(id, text);
+  });
+
+  ipcMain.handle('db:reset-transcript', (_event, { job_id }: { job_id: string }) => {
+    return transcript.resetTranscript(job_id);
+  });
 }

@@ -24,6 +24,7 @@ export interface TranscriptTurn {
   start_ms: number; // absolute from recording start
   end_ms: number;
   text: string;
+  original_text: string;
 }
 
 export interface SpeakerMapping {
@@ -122,6 +123,14 @@ export interface IpcChannels {
   'db:get-speaker-mappings': {
     request: { job_id: string };
     response: SpeakerMapping[];
+  };
+  'db:update-turn-text': {
+    request: { id: string; text: string };
+    response: void;
+  };
+  'db:reset-transcript': {
+    request: { job_id: string };
+    response: TranscriptTurn[];
   };
 
   // Recorder channels (Phase 4)

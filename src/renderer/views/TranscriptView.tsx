@@ -9,7 +9,7 @@ interface Props { jobId: string; audioPath: string; }
 
 export default function TranscriptView({ jobId, audioPath }: Props): React.ReactElement {
   const { t } = useI18n();
-  const { turns, loading, error, renameSpeaker, getDisplayName } = useTranscript(jobId);
+  const { turns, loading, error, renameSpeaker, getDisplayName, updateTurnText, resetTranscript } = useTranscript(jobId);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
 
   // Job title state and inline editing
@@ -61,6 +61,8 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
 
   const onSeek = useCallback((ms: number) => audioPlayerRef.current?.seekTo(ms), []);
 
+  const hasEdits = turns.length > 0 && turns.some(t => t.text !== t.original_text);
+
   if (loading) return <div style={{ color: 'var(--overlay1)', padding: 'var(--space-4)' }}>{t('transcript_loading')}</div>;
 
   const groups = new Map<number, TranscriptTurn[]>();
@@ -109,6 +111,18 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
           </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              if (!window.confirm(t('transcript_reset_confirm'))) return;
+              void resetTranscript();
+            }}
+            disabled={!hasEdits}
+            aria-label={t('transcript_reset_confirm_label')}
+            title={t('transcript_reset_title')}
+          >
+            {t('transcript_btn_reset')}
+          </button>
           <button className="btn btn-success btn-sm" onClick={() => void window.electronAPI.invoke('export:to-file', { jobId })}>
             {t('transcript_btn_export')}
           </button>
@@ -142,6 +156,7 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
                 displayName={getDisplayName(turn.chunk_index, turn.speaker_label)}
                 onRename={name => void renameSpeaker(turn.chunk_index, turn.speaker_label, name)}
                 onSeek={onSeek}
+                onEditText={(id, text) => void updateTurnText(id, text)}
               />
             ))}
           </React.Fragment>

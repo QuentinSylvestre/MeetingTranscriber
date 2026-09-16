@@ -636,6 +636,29 @@ p  { color: var(--subtext0); line-height: 1.6; }
   width: 100px;
 }
 
+/* Edited turn indicator */
+.speaker-turn--edited {
+  border-left: 2px solid var(--accent);
+  padding-left: calc(var(--space-3) - 2px);
+}
+
+/* Turn text editor (textarea) */
+.turn-text-editor {
+  font-family: var(--font-sans);
+  font-size: calc(var(--font-size-base, 14px) - 1px);
+  color: var(--text);
+  background: var(--surface0);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  flex: 1;
+  line-height: 1.6;
+  min-height: 24px;
+}
+
 /* ── Error boundary ────────────────────────────────────── */
 .error-boundary {
   display: flex;

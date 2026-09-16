@@ -50,5 +50,19 @@ export function useTranscript(jobId: string | null) {
     return speakerMappings.get(`${chunkIndex}::${speakerLabel}`) || speakerLabel;
   }, [speakerMappings]);
 
-  return { turns, speakerMappings, loading, error, renameSpeaker, getDisplayName };
+  const updateTurnText = useCallback(async (id: string, text: string) => {
+    if (!jobId) return;
+    await window.electronAPI.invoke('db:update-turn-text', { id, text });
+    setTurns(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+  }, [jobId]);
+
+  const resetTranscript = useCallback(async () => {
+    if (!jobId) return;
+    const resetTurns = await window.electronAPI.invoke(
+      'db:reset-transcript', { job_id: jobId }
+    ) as TranscriptTurn[];
+    setTurns(resetTurns);
+  }, [jobId]);
+
+  return { turns, speakerMappings, loading, error, renameSpeaker, getDisplayName, updateTurnText, resetTranscript };
 }

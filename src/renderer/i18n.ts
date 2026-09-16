@@ -89,6 +89,11 @@ export const en = {
   transcript_empty: 'No transcript content — the recording may have been silent',
   transcript_loading: 'Loading…',
   transcript_title_edit_hint: 'Double-click to rename',
+  // Transcript editing
+  transcript_btn_reset: '↩ Reset transcript',
+  transcript_reset_confirm: 'Reset all turns to original transcribed text? This cannot be undone.',
+  transcript_reset_confirm_label: 'Confirm reset all turns to original text',
+  transcript_reset_title: 'Restore all turns to original transcribed text',
   // JobProgressView
   progress_title: 'Transcribing…',
   progress_subtitle_complete: 'Complete',
@@ -182,6 +187,10 @@ export const fr: Record<I18nKey, string> = {
   transcript_empty: 'Aucun contenu de transcription — l\'enregistrement est peut-être silencieux',
   transcript_loading: 'Chargement…',
   transcript_title_edit_hint: 'Double-cliquez pour renommer',
+  transcript_btn_reset: '↩ Réinitialiser la transcription',
+  transcript_reset_confirm: 'Réinitialiser toutes les répliques au texte transcrit original ? Cette action est irréversible.',
+  transcript_reset_confirm_label: 'Confirmer la réinitialisation de toutes les répliques',
+  transcript_reset_title: 'Restaurer toutes les répliques au texte original',
   progress_title: 'Transcription en cours…',
   progress_subtitle_complete: 'Terminé',
   progress_subtitle_failed: 'Échec',

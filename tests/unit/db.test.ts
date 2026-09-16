@@ -117,7 +117,7 @@ describe.skipIf(!Database)('jobs CRUD', () => {
       chunk_count: 1,
     });
     saveTranscript([
-      { id: 'turn-1', job_id: 'job-cascade', chunk_index: 0, speaker_label: 'Speaker A', start_ms: 0, end_ms: 1000, text: 'Hello' },
+      { id: 'turn-1', job_id: 'job-cascade', chunk_index: 0, speaker_label: 'Speaker A', start_ms: 0, end_ms: 1000, text: 'Hello', original_text: 'Hello' },
     ]);
     updateSpeakerMapping('job-cascade', 0, 'Speaker A', 'Alice');
 
@@ -182,6 +182,7 @@ describe.skipIf(!Database)('transcript CRUD', () => {
       start_ms: i * 100,
       end_ms: i * 100 + 100,
       text: `Turn ${i} text content`,
+      original_text: `Turn ${i} text content`,
     }));
 
     const start = Date.now();
@@ -202,6 +203,72 @@ describe.skipIf(!Database)('transcript CRUD', () => {
     const mappings = getSpeakerMappings('job-001');
     const aliceMapping = mappings.find(m => m.speaker_label === 'Speaker A');
     expect(aliceMapping?.display_name).toBe('Alice Updated');
+  });
+
+  it('updateTurnText updates text but not original_text', async () => {
+    const { saveTranscript, getTranscript, updateTurnText } = await import('../../src/main/db/transcript');
+    const { createJob } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-edit',
+      title: 'Edit Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/edit.mp3',
+      duration_s: null,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+    saveTranscript([{
+      id: 'turn-edit-1',
+      job_id: 'job-edit',
+      chunk_index: 0,
+      speaker_label: 'A',
+      start_ms: 0,
+      end_ms: 1000,
+      text: 'Original',
+      original_text: 'Original',
+    }]);
+    updateTurnText('turn-edit-1', 'Corrected');
+    const [turn] = getTranscript('job-edit');
+    expect(turn.text).toBe('Corrected');
+    expect(turn.original_text).toBe('Original');
+  });
+
+  it('resetTranscript restores text from original_text for all turns', async () => {
+    const { saveTranscript, getTranscript, updateTurnText, resetTranscript } = await import('../../src/main/db/transcript');
+    const { createJob } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-reset',
+      title: 'Reset Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/reset.mp3',
+      duration_s: null,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+    saveTranscript([{
+      id: 'turn-reset-1',
+      job_id: 'job-reset',
+      chunk_index: 0,
+      speaker_label: 'A',
+      start_ms: 0,
+      end_ms: 1000,
+      text: 'Original',
+      original_text: 'Original',
+    }]);
+    updateTurnText('turn-reset-1', 'Edited');
+    const resetTurns = resetTranscript('job-reset');
+    expect(resetTurns[0].text).toBe('Original');
+    expect(resetTurns[0].original_text).toBe('Original');
+    // Verify DB state matches
+    expect(getTranscript('job-reset')[0].text).toBe('Original');
   });
 });
 
