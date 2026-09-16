@@ -13,6 +13,8 @@ const DEFAULT_PREFERENCES: Preferences = {
   defaultLanguage: 'fr',   // changed from 'auto'
   defaultProvider: 'assemblyai',
   appLanguage: 'fr',
+  includeTimestamps: true,
+  fontSize: 14,
 };
 
 function getSecretsPath(): string {

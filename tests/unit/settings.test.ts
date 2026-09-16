@@ -110,6 +110,8 @@ describe('settings/store', () => {
     expect(typeof prefs.recordingsFolder).toBe('string');
     expect(prefs.defaultProvider).toBe('assemblyai');
     expect(prefs.appLanguage).toBe('fr');
+    expect(prefs.includeTimestamps).toBe(true);
+    expect(prefs.fontSize).toBe(14);
   });
 
   // testSecret returns 'not configured' when the key exists but has no stored value.

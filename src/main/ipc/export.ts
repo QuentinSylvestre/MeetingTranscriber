@@ -3,17 +3,12 @@ import * as fs from 'fs';
 import log from 'electron-log';
 import { getTranscript, getSpeakerMappings } from '../db/transcript';
 import { getJob } from '../db/jobs';
+import { readPreferences } from '../settings/store';
+import { formatLine } from './format-line';
 
-/** Format a duration in milliseconds as [HH:MM:SS] */
-function formatTime(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `[${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}]`;
-}
+export { formatLine } from './format-line';
 
-function formatTranscript(jobId: string): string {
+function formatTranscript(jobId: string, includeTimestamps: boolean): string {
   const turns = getTranscript(jobId);
   const mappings = getSpeakerMappings(jobId);
   const nameMap = new Map<string, string>();
@@ -24,7 +19,7 @@ function formatTranscript(jobId: string): string {
   return turns
     .map(t => {
       const name = nameMap.get(`${t.chunk_index}::${t.speaker_label}`) || t.speaker_label;
-      return `${formatTime(t.start_ms)} ${name}: ${t.text}`;
+      return formatLine(name, t.start_ms, t.text, includeTimestamps);
     })
     .join('\n');
 }
@@ -57,14 +52,16 @@ export function registerExportHandlers(): void {
 
     if (result.canceled || !result.filePath) return { exported: false };
 
-    const text = formatTranscript(jobId);
+    const { includeTimestamps } = readPreferences();
+    const text = formatTranscript(jobId, includeTimestamps);
     fs.writeFileSync(result.filePath, text, 'utf-8');
     log.info(`Transcript exported to ${result.filePath}`);
     return { exported: true, filePath: result.filePath };
   });
 
   ipcMain.handle('export:to-clipboard', (_event, { jobId }: { jobId: string }) => {
-    const text = formatTranscript(jobId);
+    const { includeTimestamps } = readPreferences();
+    const text = formatTranscript(jobId, includeTimestamps);
     if (!text.trim()) return { copied: false, reason: 'no_turns' };
     clipboard.writeText(text);
     log.info(`Transcript copied to clipboard for job ${jobId}`);

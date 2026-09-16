@@ -105,6 +105,9 @@ export const en = {
   error_heading: 'Something went wrong',
   error_body: 'An unexpected error occurred. If this keeps happening, please restart the app.',
   error_btn_reload: 'Reload app',
+  // Settings Export
+  settings_export_heading: 'Export',
+  settings_include_timestamps_label: 'Include timestamps in copy/export',
 } as const;
 
 export const fr: Record<I18nKey, string> = {
@@ -200,4 +203,6 @@ export const fr: Record<I18nKey, string> = {
   error_heading: 'Une erreur est survenue',
   error_body: 'Une erreur inattendue s\'est produite. Si cela persiste, veuillez redémarrer l\'application.',
   error_btn_reload: 'Redémarrer l\'application',
+  settings_export_heading: 'Export',
+  settings_include_timestamps_label: 'Inclure les horodatages lors de la copie/export',
 };

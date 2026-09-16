@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { formatLine } from '../../src/main/ipc/format-line';
 
 // Test the formatTime helper from export.ts inline (pure function, no side-effects).
 function formatTime(ms: number): string {
@@ -60,20 +61,10 @@ describe('app:// URL construction', () => {
 });
 
 describe('transcript text formatting', () => {
-  it('formats a turn as [HH:MM:SS] Name: text', () => {
-    const ms = 65000; // 1m 5s
-    const name = 'Alice';
-    const text = 'Hello world';
-    const line = `${formatTime(ms)} ${name}: ${text}`;
-    expect(line).toBe('[00:01:05] Alice: Hello world');
+  it('formats a turn with timestamp when includeTimestamps is true', () => {
+    expect(formatLine('Alice', 65000, 'Hello world', true)).toBe('[00:01:05] Alice: Hello world');
   });
-
-  it('joins multiple turns with newlines', () => {
-    const turns = [
-      { ms: 0, name: 'Alice', text: 'Hello' },
-      { ms: 5000, name: 'Bob', text: 'Hi there' },
-    ];
-    const result = turns.map(t => `${formatTime(t.ms)} ${t.name}: ${t.text}`).join('\n');
-    expect(result).toBe('[00:00:00] Alice: Hello\n[00:00:05] Bob: Hi there');
+  it('formats a turn without timestamp when includeTimestamps is false', () => {
+    expect(formatLine('Alice', 65000, 'Hello world', false)).toBe('Alice: Hello world');
   });
 });

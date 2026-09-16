@@ -68,7 +68,9 @@ After transcription, the **Transcript** view shows speaker-labeled turns.
 - **Export ⇩** saves the transcript to a `.txt` file.
 - **Copy 📋** copies the transcript to the clipboard.
 
-Transcript format: `[HH:MM:SS] Speaker Name: text`
+Transcript format (default): `[HH:MM:SS] Speaker Name: text`
+
+Timestamps can be disabled in **Settings → Export**.
 
 ## Known Limitations
 

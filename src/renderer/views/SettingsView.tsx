@@ -22,6 +22,7 @@ export default function SettingsView(): React.ReactElement {
   const [defaultProvider, setDefaultProvider] = useState<ProviderName>('assemblyai');
   const [defaultLanguage, setDefaultLanguage] = useState<'fr' | 'en'>('fr');
   const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
+  const [includeTimestamps, setIncludeTimestamps] = useState(true);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -45,15 +46,18 @@ export default function SettingsView(): React.ReactElement {
       getPreference('defaultProvider'),
       getPreference('defaultLanguage'),
       getPreference('appLanguage'),
-    ]).then(([prov, lang, appLang]) => {
+      getPreference('includeTimestamps'),
+    ]).then(([prov, lang, appLang, ts]) => {
       // Cast via ProviderName check
       const provVal = (PROVIDER_NAMES.includes(prov as ProviderName) ? prov : 'assemblyai') as ProviderName;
       // Treat 'auto' as 'fr'
       const langVal = (lang === 'fr' || lang === 'en') ? lang as 'fr' | 'en' : 'fr';
       const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
+      const tsVal = typeof ts === 'boolean' ? ts : true;
       setDefaultProvider(provVal);
       setDefaultLanguage(langVal);
       setAppLanguage(appLangVal);
+      setIncludeTimestamps(tsVal);
       setPrefsLoaded(true);
     }).catch(console.error);
   }, []);
@@ -99,6 +103,15 @@ export default function SettingsView(): React.ReactElement {
       setLang(v);
     } catch (e) {
       console.error('Failed to save app language preference', e);
+    }
+  };
+
+  const handleIncludeTimestampsChange = async (v: boolean) => {
+    try {
+      await setPreference('includeTimestamps', v);
+      setIncludeTimestamps(v);
+    } catch (e) {
+      console.error('Failed to save includeTimestamps preference', e);
     }
   };
 
@@ -161,8 +174,27 @@ export default function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <h3 style={{ marginBottom: 'var(--space-3)' }}>{t('settings_apikeys_heading')}</h3>
+      {/* Export card */}
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('settings_export_heading')}</h3>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={includeTimestamps}
+                onChange={e => void handleIncludeTimestampsChange(e.target.checked)}
+                disabled={!prefsLoaded}
+                aria-label={t('settings_include_timestamps_label')}
+                style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+              />
+              {t('settings_include_timestamps_label')}
+            </label>
+          </div>
+        </div>
+      </div>
 
+      <h3 style={{ marginBottom: 'var(--space-3)' }}>{t('settings_apikeys_heading')}</h3>
       {PROVIDER_NAMES.map(p => {
         const s = status[p];
         return (
