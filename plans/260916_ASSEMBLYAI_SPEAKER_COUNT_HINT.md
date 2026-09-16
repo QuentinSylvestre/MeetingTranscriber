@@ -311,6 +311,7 @@ All 8 steps implemented as specified, with the divergences noted below (all driv
 2. RecordView's speaker-count number inputs (exact/min/max) initially carried `disabled={!isIdle}`, beyond the plan's literal Step 5 snippet (which only disabled the `<select>`). This created a High-severity stuck-recording dead-end (End-user advocate finding #1: an invalid value entered before recording starts becomes both un-editable and un-submittable once recording is active, with no in-UI recovery) — fixed by removing `disabled` from the three `<input>` elements; the `<select>` remains disabled exactly as the plan specified, which is sufficient to prevent the dead-end since the still-selected mode's value stays editable.
 3. Added `role="alert"` (RecordView error paragraph), `aria-label` (min/max inputs, both views), `aria-invalid`/`aria-describedby` (all speaker-count inputs, both views, wired to the hook's new `speakerError` field), and a `setError(null)` call (RecordView `handleStop`, mirroring UploadView) — none specified in the plan's literal snippets; all added per review findings, detailed in the Review Log below.
 4. Guarded the AssemblyAI speaker-count request-body spread on `options.diarize` (`assemblyai.ts`) — not in the plan's literal Step 4 snippet; added per Senior-engineer review finding #8 to remove a latent coupling on `runner.ts`'s hardcoded `diarize: true` (AssemblyAI requires `speaker_labels: true` for either speaker-count field to take effect).
+5. `/qdev` Step 9's two-cycle final review (Post-Implementation Review, below) found and fixed 9 further issues beyond the per-phase cycle: a `speakerFieldInvalid` derived-boolean guard (both views) and a `setSpeakerMode` wrapper that clears stale validation state on mode switch (`useSpeakerCountHint.ts`) — both closing real staleness in the `aria-invalid`/`aria-describedby` wiring added by divergence #3; two more i18n keys (`record_default_title`, `upload_error_no_file`) replacing hardcoded English strings in the touched `handleStop`/`handleTranscribe` functions; an `aria-label` on the exact-mode input; a `prefsLoaded` render gate on the speaker-count control; and a 4th AssemblyAI test case for the `diarize:false` guard from divergence #4.
 
 ## Harness Improvement Opportunities
 
@@ -350,3 +351,30 @@ Implementation health: Green (all findings resolved, no unresolved High/Medium).
 | 8 | Low | [Senior engineer] AssemblyAI speaker-count fields were sent without checking `options.diarize`, safe today only because `runner.ts` hardcodes `diarize: true`. | Fixed — guarded the request-body spread on `options.diarize`. |
 
 **Override note (default vs. user instruction)**: the user's `/qdev` invocation specified "1 qreview cycle per phase," overriding `/qdev` Step 6's default 2-cycle cap down to 1 for this plan's per-phase review. No cycle-2 re-review was dispatched after applying the fixes above; all 8 findings were resolved in cycle 1 (6 mechanical auto-fixes plus 2 user-directed "Fix now" fixes applied in the same pass). `npm test` (81/81) and `npx tsc --noEmit` (no new errors) were re-run after all fixes and stayed green.
+
+### 2026-09-16 — Post-Implementation Review
+
+Overall implementation health: Green (all findings resolved, no unresolved High/Medium, cycle cap reached with a clean cycle-2 result).
+Personas: Senior engineer, End-user advocate (2 review cycles — the "1 qreview cycle per phase" override from the per-phase review does not apply to this always-run final review, which is a distinct step, not a phase cycle).
+9 findings (0 High, 2 Medium, 7 Low). 9/9 fixed.
+QA verification: BLOCKED — see below (this session's tool surface cannot drive the Electron desktop app; the plan's mandatory manual QA checklist remains a pending user action).
+
+#### Test execution summary
+
+| Unit | Tests | QA | Notes |
+|---|---|---|---|
+| Full implementation (Steps 1-8) | pass (82/82, up from 78 baseline) | BLOCKED | `npx tsc --noEmit`: 12 pre-existing errors only, none in this plan's files. Manual/runtime QA not executed — see Harness Improvement Opportunities and completion summary. |
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Medium | [Senior engineer, End-user advocate] `speakerError` only updated at submit time; `aria-invalid`/`aria-describedby` could go stale and point at removed/unrelated content after a later, unrelated error change. | Fixed — added a `speakerFieldInvalid` derived boolean (`speakerError !== null && <displayed error> === speakerError`) in both views. |
+| 2 | Low | [Senior engineer] `SpeakerCountMode` was exported from the shared hook but never imported/used — both views inlined the literal union in their `onChange` casts. | Fixed — both views now import and use `SpeakerCountMode`. |
+| 3 | Low | [Senior engineer, End-user advocate] No test covered the `options.diarize` guard (Divergence #4) — none of the 3 speaker-count test cases passed `diarize: false`. | Fixed — added a 4th `assemblyai.test.ts` case: `diarize:false` + hint set sends neither key. |
+| 4 | Low | [End-user advocate] The exact-mode number input had no `aria-label`, unlike the min/max inputs fixed for the same reason in the prior cycle. | Fixed — added `aria-label` to the exact-mode input in both views. |
+| 5 | Low | [End-user advocate] `selectedProvider` defaults to `'assemblyai'` before `getPreference('defaultProvider')` resolves (and stays wrong on load failure), so the control could flash into view for non-AssemblyAI users. | Fixed — gated the control's render on `prefsLoaded && selectedProvider === 'assemblyai'` in both views. |
+| 6 | Low | [Senior engineer, End-user advocate] `UploadView.tsx`'s `handleTranscribe` (a touched function) hardcoded an English-only "Please select an audio file." error, bypassing this plan's own new i18n keys in the same function. | Fixed — added `upload_error_no_file` (en/fr), used via `t()`. |
+| 7 | Low | [End-user advocate] `RecordView.tsx`'s `handleStop` (a touched function) hardcoded an English-only default recording title. | Fixed — added `record_default_title` (en/fr, with `{{date}}` interpolation), used via `t()`. |
+| 8 | Medium | [End-user advocate, cycle 2] Switching speaker mode (exact↔range) after a failed submit left stale `aria-invalid`/`aria-describedby` on the newly-mounted, never-validated inputs of the new mode — the same defect class finding #1 targeted, via a different trigger. | Fixed — `useSpeakerCountHint`'s `setSpeakerMode` now clears `speakerError` whenever the mode changes. |
+| 9 | Low | [Senior engineer, End-user advocate, cycle 2] The two new i18n keys (`record_default_title`, `upload_error_no_file`) sat under the unrelated "Speaker-count hint" comment block. | Fixed — relocated each key into its owning view's existing section, both `en` and `fr`. |
+
+Two review cycles ran (cycle 1: findings 1-7; cycle 2: a fresh re-review of the cycle-1 fixes surfaced findings 8-9, both fixed; cycle cap reached — no cycle 3 per the 2-cycle max). `npm test` (82/82) and `npx tsc --noEmit` (12 pre-existing errors only, none in this plan's files) were re-run after every fix and stayed green throughout.
