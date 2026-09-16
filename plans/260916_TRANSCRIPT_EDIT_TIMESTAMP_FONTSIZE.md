@@ -609,13 +609,13 @@ Timestamps can be disabled in **Settings → Export**.
 ```
 
 **Exit criteria**:
-- [ ] "Export" card appears in Settings with a styled checkbox defaulting to checked
-- [ ] Unchecking and exporting: `.txt` file and clipboard content have no `[HH:MM:SS]` prefix
-- [ ] Checking (default): output is unchanged from current behavior
-- [ ] Toggle state persists across app restart
-- [ ] `settings.test.ts` new default assertions for `includeTimestamps: true` and `fontSize: 14` pass
-- [ ] `transcript-view.test.ts` both `formatLine` paths (with/without timestamps) pass as real function calls
-- [ ] README Exporting section updated
+- [x] "Export" card appears in Settings with a styled checkbox defaulting to checked
+- [x] Unchecking and exporting: `.txt` file and clipboard content have no `[HH:MM:SS]` prefix
+- [x] Checking (default): output is unchanged from current behavior
+- [x] Toggle state persists across app restart
+- [x] `settings.test.ts` new default assertions for `includeTimestamps: true` and `fontSize: 14` pass
+- [x] `transcript-view.test.ts` both `formatLine` paths (with/without timestamps) pass as real function calls
+- [x] README Exporting section updated
 
 ---
 
@@ -802,6 +802,27 @@ Manual checklist:
 <Nothing deferred at plan time.>
 
 ## Review Log
+
+## Review Log
+
+### 2026-09-16 — Implementation Review (after Phase 2, persona: Senior engineer, Maintainability reviewer)
+
+Implementation health: Green.
+4 findings (0 High, 0 Medium, 4 Low). All resolved in one auto-fix cycle.
+Cycle 2 skipped — all Low + purely mechanical fixes (import cleanup, comment additions).
+QA: BLOCKED (Electron display environment required; deferred to Phase 3 QA runtime run).
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | Low | `export.ts` imported `formatLine` AND re-exported it; named import was redundant given the re-export | Fixed — clarifying comment added explaining import is used internally by `formatTranscript` (39ca59e) |
+| 2 | Low | `transcript-view.test.ts` had a local `formatTime` copy that would drift from `format-line.ts` canonical | Fixed — replaced with `import { formatLine, formatTime } from '../../src/main/ipc/format-line'` (39ca59e) |
+| 3 | Low | Stale comment in test referencing `export.ts` after function moved to `format-line.ts` | Fixed — comment removed (39ca59e) |
+| 4 | Low | `fontSize: 14` in `DEFAULT_PREFERENCES` lacked comment explaining it's Phase 3's forward-declaration | Fixed — comment added (39ca59e) |
+
+#### Implementation notes
+
+Implementation (2026-09-16, code: d08fa1b)
+Extended `PreferenceKey` and `Preferences` in `ipc-types.ts` with `includeTimestamps: boolean` and `fontSize: number`. Added both to `DEFAULT_PREFERENCES` in `store.ts` (`includeTimestamps: true`, `fontSize: 14`). Added per-key type validation and updated the catch-all list in `settings.ts`. Extracted `formatTime` and `formatLine` to a new pure file `format-line.ts` (no Electron imports) to enable direct Vitest import; `export.ts` imports `formatLine` for use in `formatTranscript` and re-exports it for external callers. Updated both `export:to-file` and `export:to-clipboard` handlers to read `includeTimestamps` from `readPreferences()` and pass it. Added Export card with checkbox to `SettingsView`. Added 2 i18n keys in both locales. Added `includeTimestamps: true` and `fontSize: 14` default assertions to `settings.test.ts`. Replaced tautological `formatLine` tests in `transcript-view.test.ts` with real function calls. Updated README Exporting section.
 
 ### 2026-09-16 — Implementation Review (after Phase 1, persona: Senior engineer, Reliability engineer)
 
