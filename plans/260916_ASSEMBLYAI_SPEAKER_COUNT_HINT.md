@@ -1,7 +1,7 @@
 # AssemblyAI Speaker-Count Hint
 
 > **Date**: 2026-09-16
-> **Status**: Draft  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Status**: In Progress — implementation complete, manual QA pending  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Add a per-job speaker-count hint (exact or min/max range) to AssemblyAI transcription requests, surfaced in RecordView/UploadView only when AssemblyAI is the active provider.
 
@@ -297,9 +297,25 @@ In the `## Usage` section:
 - `README.md` — add the two usage-step lines described in Step 8 (required per this project's `AGENTS.md § Doc & Test Guidelines`: "Update README.md ... when changes affect ... basic usage").
 - No `AGENTS.md` change needed (confirmed via doc-impact sub-agent search — no AssemblyAI/diarization-specific content exists there to update).
 
+## Implementation
+
+### Implementation (2026-09-16, code: c18359f)
+
+All 8 steps implemented as specified, with the divergences noted below (all driven by the per-phase review cycle). `npm test`: 81/81 passing (up from the 78 baseline — 3 new AssemblyAI request-body tests plus 1 new runner.ts assertion). `npx tsc --noEmit`: zero new errors versus the pre-existing baseline, confirmed via a `git stash`/`tsc`/`git stash pop` comparison — the same 12 errors exist on HEAD, all in files this plan never touches (`google.ts`, `useRecorder.ts`, `JobProgressView.tsx`, `mic-capture.worklet.ts`, plus two `@types/node`/`electron.d.ts` declaration conflicts).
+
+**Manual QA not run this session**: the Verification section's manual QA checklist (mandatory per the Context risk note) requires driving the actual Electron desktop window and, for its last bullet, a real AssemblyAI API key/job. Neither is reachable with this session's tool surface — there is no Windows desktop-automation tool available, and the app's dev workflow (`vite-plugin-electron`) launches a genuine Electron `BrowserWindow`, not a plain Chrome tab the browser-automation tooling can attach to; `window.electronAPI` (the preload bridge the views depend on for `getPreference`/`hasSecret` on mount) is also unavailable outside a real Electron renderer, so even a bare Vite dev-server page load would not exercise the real code path. This is an honest tool-surface gap, not a skipped step — see the completion summary for what the user needs to run manually.
+
+## Implementation Divergences from Plan
+
+1. Added `src/renderer/hooks/useSpeakerCountHint.ts` (not in the plan's Files-to-modify table) — extracts the `buildSpeakerCountHint()` validator and its 4 `useState` fields out of RecordView/UploadView into a shared hook. Driven by Senior-engineer review finding #7 (Review Log below); the user chose "Fix now" over the plan's own explicit prior decision to keep per-component helpers — the live decision supersedes the plan-time call.
+2. RecordView's speaker-count number inputs (exact/min/max) initially carried `disabled={!isIdle}`, beyond the plan's literal Step 5 snippet (which only disabled the `<select>`). This created a High-severity stuck-recording dead-end (End-user advocate finding #1: an invalid value entered before recording starts becomes both un-editable and un-submittable once recording is active, with no in-UI recovery) — fixed by removing `disabled` from the three `<input>` elements; the `<select>` remains disabled exactly as the plan specified, which is sufficient to prevent the dead-end since the still-selected mode's value stays editable.
+3. Added `role="alert"` (RecordView error paragraph), `aria-label` (min/max inputs, both views), `aria-invalid`/`aria-describedby` (all speaker-count inputs, both views, wired to the hook's new `speakerError` field), and a `setError(null)` call (RecordView `handleStop`, mirroring UploadView) — none specified in the plan's literal snippets; all added per review findings, detailed in the Review Log below.
+4. Guarded the AssemblyAI speaker-count request-body spread on `options.diarize` (`assemblyai.ts`) — not in the plan's literal Step 4 snippet; added per Senior-engineer review finding #8 to remove a latent coupling on `runner.ts`'s hardcoded `diarize: true` (AssemblyAI requires `speaker_labels: true` for either speaker-count field to take effect).
+
 ## Harness Improvement Opportunities
 
 None observed during `/qexplore` or `/qplan` for this project.
+- `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface (no Windows UI-automation tool, and the browser-automation tooling attaches to Chrome tabs, not arbitrary Electron `BrowserWindow`s) — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
 
 ## Review Log
 
@@ -316,3 +332,21 @@ None observed during `/qexplore` or `/qplan` for this project.
 | 5 | Low | Files-to-modify table omits `src/main/ipc/transcription.ts`, a real hop in the data-flow chain. | Fixed — added a row noting no change is needed there and why. |
 | 6 | Low | SC-3 said input is "clamped" to 1–20; Step 5's actual code rejects out-of-range input with a blocking error rather than coercing it. | Fixed — reworded SC-3 to match the actual reject-on-invalid behavior. |
 | 7 | Low | A single shared error string shows an irrelevant "(min ≤ max for a range)" clause in exact mode. | Fixed — split into `speaker_count_error_exact` and `speaker_count_error_range` i18n keys. |
+
+### 2026-09-16 — Implementation Review (via /qdev, persona: Senior engineer, End-user advocate)
+
+Implementation health: Green (all findings resolved, no unresolved High/Medium).
+8 findings (1 High, 3 Medium, 4 Low). 8/8 fixed — 6 auto-fixed by the orchestrator, 2 fixed on explicit user "Fix now" decisions (2026-09-16) after escalation, per the user's "1 qreview cycle per phase" instruction (no second review cycle was dispatched; see note below).
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | High | [End-user advocate] RecordView's `disabled={!isIdle}` on speaker-count inputs let an invalid pre-recording value become permanently un-fixable and un-submittable once recording starts. | Fixed — removed `disabled` from the three number inputs; the `<select>` stays disabled per the plan's own spec, which is sufficient. |
+| 2 | Medium | [End-user advocate] RecordView's error paragraph lacked `role="alert"`, unlike UploadView's equivalent, despite the new validation path making it far more reachable. | Fixed — added `role="alert"` for parity with UploadView. |
+| 3 | Medium | [End-user advocate] Range-mode min/max inputs share one `<label>` with nothing distinguishing them for assistive tech. | Fixed — added `aria-label` to both inputs in both views. |
+| 4 | Medium | [Senior engineer] Plan Status stayed "Draft" with no Review Log entry recording implementation or the mandatory manual QA results, despite Steps 1-8 being claimed complete. | Fixed — this update sets Status and records this review; manual QA itself remains a pending user action (see Implementation notes and completion summary). |
+| 5 | Low | [End-user advocate] RecordView's `handleStop` never cleared a stale error on the success path, unlike UploadView's explicit `setError(null)`. | Fixed — added `setError(null)` in `handleStop` right after validation passes. |
+| 6 | Low | [End-user advocate] No `aria-invalid`/`aria-describedby` linking speaker-count inputs to the error text (matches the rest of the codebase, which has no precedent either). | Fixed — user chose "Fix now" (2026-09-16); added `aria-invalid`/`aria-describedby` wired to a new `speakerError` field on the shared hook. |
+| 7 | Low | [Senior engineer] `buildSpeakerCountHint()` and its 4 state hooks were duplicated verbatim between RecordView and UploadView. | Fixed — user chose "Fix now" (2026-09-16), overriding the plan's own prior no-extraction decision; extracted `src/renderer/hooks/useSpeakerCountHint.ts`. |
+| 8 | Low | [Senior engineer] AssemblyAI speaker-count fields were sent without checking `options.diarize`, safe today only because `runner.ts` hardcodes `diarize: true`. | Fixed — guarded the request-body spread on `options.diarize`. |
+
+**Override note (default vs. user instruction)**: the user's `/qdev` invocation specified "1 qreview cycle per phase," overriding `/qdev` Step 6's default 2-cycle cap down to 1 for this plan's per-phase review. No cycle-2 re-review was dispatched after applying the fixes above; all 8 findings were resolved in cycle 1 (6 mechanical auto-fixes plus 2 user-directed "Fix now" fixes applied in the same pass). `npm test` (81/81) and `npx tsc --noEmit` (no new errors) were re-run after all fixes and stayed green.
