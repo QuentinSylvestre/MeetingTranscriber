@@ -14,7 +14,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   defaultProvider: 'assemblyai',
   appLanguage: 'fr',
   includeTimestamps: true,
-  fontSize: 14,
+  fontSize: 14, // default; UI options defined in Phase 3 (SettingsView font size select)
 };
 
 function getSecretsPath(): string {

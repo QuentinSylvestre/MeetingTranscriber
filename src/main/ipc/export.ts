@@ -6,7 +6,7 @@ import { getJob } from '../db/jobs';
 import { readPreferences } from '../settings/store';
 import { formatLine } from './format-line';
 
-export { formatLine } from './format-line';
+export { formatLine } from './format-line'; // re-exported so callers don't need to know format-line directly
 
 function formatTranscript(jobId: string, includeTimestamps: boolean): string {
   const turns = getTranscript(jobId);

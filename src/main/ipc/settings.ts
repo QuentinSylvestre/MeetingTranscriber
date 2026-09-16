@@ -33,6 +33,7 @@ export function registerSettingsHandlers(): void {
     else if (key === 'defaultLanguage' && !['fr', 'en', 'auto'].includes(value as string)) { return; }
     else if (key === 'defaultProvider' && !(PROVIDER_NAMES as string[]).includes(value as string)) { return; }
     else if (key === 'appLanguage' && !(['fr', 'en'] as string[]).includes(value as string)) { return; }
+    // Per-key type validation (guards before the catch-all allowlist below)
     else if (key === 'includeTimestamps' && typeof value !== 'boolean') { return; }
     else if (key === 'fontSize' && (![14, 16, 18, 20].includes(value as number))) { return; }
     else if (!(['recordingsFolder', 'defaultLanguage', 'defaultProvider', 'appLanguage', 'includeTimestamps', 'fontSize'] as string[]).includes(key)) { return; }
