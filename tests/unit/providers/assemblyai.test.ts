@@ -136,6 +136,23 @@ describe('AssemblyAIProvider', () => {
     expect(createCallBody.speakers_expected).toBeUndefined();
   });
 
+  it('sends neither key when diarize is false, even with speakerCountHint set', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_008' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'completed', utterances: [] }) });
+
+    await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: false, speakerCountHint: { mode: 'exact', count: 4 } },
+      () => {},
+      new AbortController().signal
+    );
+
+    const createCallBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
+    expect(createCallBody.speakers_expected).toBeUndefined();
+    expect(createCallBody.speaker_options).toBeUndefined();
+  });
+
   it('sends neither key when speakerCountHint is unset', async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_007' }) });

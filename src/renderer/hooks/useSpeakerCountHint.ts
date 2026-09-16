@@ -7,7 +7,7 @@ export type SpeakerCountMode = 'none' | 'exact' | 'range';
 // Shared by RecordView and UploadView — same fields, same 1-20/min<=max validation rule.
 export function useSpeakerCountHint() {
   const { t } = useI18n();
-  const [speakerMode, setSpeakerMode] = useState<SpeakerCountMode>('none');
+  const [speakerMode, setSpeakerModeState] = useState<SpeakerCountMode>('none');
   const [speakerExact, setSpeakerExact] = useState('');
   const [speakerMin, setSpeakerMin] = useState('');
   const [speakerMax, setSpeakerMax] = useState('');
@@ -15,6 +15,13 @@ export function useSpeakerCountHint() {
   // wire aria-invalid/aria-describedby on the offending input(s) without duplicating
   // the validation logic or a second error-display element.
   const [speakerError, setSpeakerError] = useState<string | null>(null);
+
+  // Switching mode swaps which inputs are mounted — a previous mode's error
+  // must not carry over onto the new mode's freshly-mounted, unvalidated inputs.
+  function setSpeakerMode(mode: SpeakerCountMode): void {
+    setSpeakerModeState(mode);
+    setSpeakerError(null);
+  }
 
   function buildSpeakerCountHint(): { hint: SpeakerCountHint | undefined; error: string | null } {
     const result = ((): { hint: SpeakerCountHint | undefined; error: string | null } => {

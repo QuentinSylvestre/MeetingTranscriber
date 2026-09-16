@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
 import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
+import type { SpeakerCountMode } from '../hooks/useSpeakerCountHint';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -38,6 +39,10 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
     speakerError,
     buildSpeakerCountHint,
   } = useSpeakerCountHint();
+  // Only mark the speaker-count fields invalid while #form-error is actually
+  // showing THEIR error — otherwise a later, unrelated error (or a cleared
+  // error) leaves a stale aria-describedby pointing at the wrong content.
+  const speakerFieldInvalid = speakerError !== null && error === speakerError;
 
   useEffect(() => {
     Promise.all([
@@ -79,7 +84,7 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
   };
 
   const handleTranscribe = async () => {
-    if (!selected) { setError('Please select an audio file.'); return; }
+    if (!selected) { setError(t('upload_error_no_file')); return; }
     if (!prefsLoaded) return;
     if (providerKeyMissing) {
       setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
@@ -178,13 +183,13 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
             </select>
           </div>
 
-          {selectedProvider === 'assemblyai' && (
+          {prefsLoaded && selectedProvider === 'assemblyai' && (
             <div className="form-group">
               <label className="form-label">{t('speaker_count_label')}</label>
               <select
                 className="form-select"
                 value={speakerMode}
-                onChange={e => setSpeakerMode(e.target.value as 'none' | 'exact' | 'range')}
+                onChange={e => setSpeakerMode(e.target.value as SpeakerCountMode)}
               >
                 <option value="none">{t('speaker_count_mode_none')}</option>
                 <option value="exact">{t('speaker_count_mode_exact')}</option>
@@ -195,14 +200,15 @@ export default function UploadView({ onJobQueued }: UploadViewProps): React.Reac
                   className="form-input" type="number" min={1} max={20}
                   value={speakerExact} onChange={e => setSpeakerExact(e.target.value)}
                   placeholder={t('speaker_count_exact_placeholder')}
-                  aria-invalid={speakerError !== null}
-                  aria-describedby={speakerError !== null ? 'form-error' : undefined}
+                  aria-label={t('speaker_count_label')}
+                  aria-invalid={speakerFieldInvalid}
+                  aria-describedby={speakerFieldInvalid ? 'form-error' : undefined}
                 />
               )}
               {speakerMode === 'range' && (
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
-                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerFieldInvalid} aria-describedby={speakerFieldInvalid ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerFieldInvalid} aria-describedby={speakerFieldInvalid ? 'form-error' : undefined} />
                 </div>
               )}
             </div>

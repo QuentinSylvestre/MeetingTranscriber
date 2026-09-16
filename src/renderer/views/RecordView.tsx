@@ -3,6 +3,7 @@ import { useRecorder } from '../hooks/useRecorder';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
 import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
+import type { SpeakerCountMode } from '../hooks/useSpeakerCountHint';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
@@ -94,7 +95,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
     try {
       await window.electronAPI.invoke('transcription:start-job', {
         jobId,
-        title: `Recording ${new Date().toLocaleString()}`,
+        title: t('record_default_title').replace('{{date}}', new Date().toLocaleString()),
         audioPath,
         provider: selectedProvider,
         model: 'universal',
@@ -110,6 +111,10 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
 
   const isIdle = status === 'idle';
   const displayError = recorderError || error;
+  // Only mark the speaker-count fields invalid while #form-error is actually
+  // showing THEIR error — otherwise a later, unrelated error (or a cleared
+  // error) leaves a stale aria-describedby pointing at the wrong content.
+  const speakerFieldInvalid = speakerError !== null && displayError === speakerError;
 
   return (
     <div>
@@ -197,13 +202,13 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
             </select>
           </div>
 
-          {selectedProvider === 'assemblyai' && (
+          {prefsLoaded && selectedProvider === 'assemblyai' && (
             <div className="form-group">
               <label className="form-label">{t('speaker_count_label')}</label>
               <select
                 className="form-select"
                 value={speakerMode}
-                onChange={e => setSpeakerMode(e.target.value as 'none' | 'exact' | 'range')}
+                onChange={e => setSpeakerMode(e.target.value as SpeakerCountMode)}
                 disabled={!isIdle}
               >
                 <option value="none">{t('speaker_count_mode_none')}</option>
@@ -215,14 +220,15 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
                   className="form-input" type="number" min={1} max={20}
                   value={speakerExact} onChange={e => setSpeakerExact(e.target.value)}
                   placeholder={t('speaker_count_exact_placeholder')}
-                  aria-invalid={speakerError !== null}
-                  aria-describedby={speakerError !== null ? 'form-error' : undefined}
+                  aria-label={t('speaker_count_label')}
+                  aria-invalid={speakerFieldInvalid}
+                  aria-describedby={speakerFieldInvalid ? 'form-error' : undefined}
                 />
               )}
               {speakerMode === 'range' && (
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
-                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerError !== null} aria-describedby={speakerError !== null ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMin} onChange={e => setSpeakerMin(e.target.value)} placeholder={t('speaker_count_min_placeholder')} aria-label={t('speaker_count_min_placeholder')} aria-invalid={speakerFieldInvalid} aria-describedby={speakerFieldInvalid ? 'form-error' : undefined} />
+                  <input className="form-input" type="number" min={1} max={20} value={speakerMax} onChange={e => setSpeakerMax(e.target.value)} placeholder={t('speaker_count_max_placeholder')} aria-label={t('speaker_count_max_placeholder')} aria-invalid={speakerFieldInvalid} aria-describedby={speakerFieldInvalid ? 'form-error' : undefined} />
                 </div>
               )}
             </div>
