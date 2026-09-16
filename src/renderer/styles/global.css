@@ -638,8 +638,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 
 /* Edited turn indicator */
 .speaker-turn--edited {
-  border-left: 2px solid var(--accent);
-  margin-left: -2px; /* extend border left without shifting content */
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* Turn text editor (textarea) */
