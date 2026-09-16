@@ -214,7 +214,7 @@ export const fr: Record<I18nKey, string> = {
   settings_include_timestamps_label: 'Inclure les horodatages lors de la copie/export',
   settings_fontsize_heading: 'Accessibilité',
   settings_fontsize_label: 'Taille du texte',
-  settings_fontsize_medium: 'Moyen (défaut)',
+  settings_fontsize_medium: 'Moyenne (défaut)',
   settings_fontsize_large: 'Grand',
   settings_fontsize_xl: 'Très grand',
   settings_fontsize_xxl: 'XXL',

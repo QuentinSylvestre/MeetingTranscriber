@@ -7,6 +7,7 @@ import TranscriptView from './views/TranscriptView';
 import HistoryView from './views/HistoryView';
 import ErrorBoundaryWithI18n from './components/ErrorBoundaryWithI18n';
 import Sidebar from './components/Sidebar';
+import { useSettings } from './hooks/useSettings';
 import type { Job } from '../shared/ipc-types';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
@@ -19,18 +20,18 @@ export default function App(): React.ReactElement {
   // Viewing a completed transcript from history must not trigger the indicator.
   const [isTranscribing, setIsTranscribing] = useState(false);
 
+  const { getPreference } = useSettings();
+
   // Apply stored font-size preference on mount via CSS variable.
   useEffect(() => {
     let alive = true;
-    (window.electronAPI.invoke('settings:get-preference', { key: 'fontSize' }) as Promise<{ value: unknown }>)
-      .then(({ value }) => {
-        if (!alive) return;
-        const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 14;
-        document.documentElement.style.setProperty('--font-size-base', `${size}px`);
-      })
-      .catch(console.error);
+    getPreference('fontSize').then((value) => {
+      if (!alive) return;
+      const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 14;
+      document.documentElement.style.setProperty('--font-size-base', `${size}px`);
+    }).catch(console.error);
     return () => { alive = false; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Called by RecordView when a recording has been stopped, flushed, and a
   // transcription job has been queued. Navigate straight to progress.

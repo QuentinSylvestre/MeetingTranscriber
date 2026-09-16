@@ -129,6 +129,7 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
             start_ms: turn.startMs + offsetMs,
             end_ms: turn.endMs + offsetMs,
             text: turn.text,
+            original_text: turn.text,
           });
         }
       }

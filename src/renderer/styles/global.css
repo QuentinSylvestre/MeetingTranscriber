@@ -256,7 +256,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 }
 
 .sidebar-brand-name {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.1px;

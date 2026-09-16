@@ -62,6 +62,7 @@ export default function SettingsView(): React.ReactElement {
       setAppLanguage(appLangVal);
       setIncludeTimestamps(tsVal);
       setFontSize(sizeVal);
+      document.documentElement.style.setProperty('--font-size-base', `${sizeVal}px`);
       setPrefsLoaded(true);
     }).catch(console.error);
   }, []);
@@ -211,8 +212,9 @@ export default function SettingsView(): React.ReactElement {
         <div className="card-body">
           <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('settings_fontsize_heading')}</h3>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">{t('settings_fontsize_label')}</label>
+            <label className="form-label" htmlFor="font-size-select">{t('settings_fontsize_label')}</label>
             <select
+              id="font-size-select"
               className="form-select"
               value={fontSize}
               onChange={e => void handleFontSizeChange(Number(e.target.value))}
