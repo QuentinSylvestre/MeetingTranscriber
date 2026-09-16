@@ -47,7 +47,10 @@ export function getSpeakerMappings(job_id: string): SpeakerMapping[] {
 
 export function updateTurnText(id: string, text: string): void {
   const db = getDb();
-  db.prepare('UPDATE transcript_turns SET text = @text WHERE id = @id').run({ text, id });
+  const result = db.prepare('UPDATE transcript_turns SET text = @text WHERE id = @id').run({ text, id });
+  if (result.changes === 0) {
+    throw new Error(`updateTurnText: no turn found with id ${id}`);
+  }
 }
 
 export function resetTranscript(job_id: string): TranscriptTurn[] {

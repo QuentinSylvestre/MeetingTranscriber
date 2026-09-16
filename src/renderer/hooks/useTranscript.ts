@@ -52,16 +52,26 @@ export function useTranscript(jobId: string | null) {
 
   const updateTurnText = useCallback(async (id: string, text: string) => {
     if (!jobId) return;
-    await window.electronAPI.invoke('db:update-turn-text', { id, text });
-    setTurns(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+    try {
+      await window.electronAPI.invoke('db:update-turn-text', { id, text });
+      setTurns(prev => prev.map(t => t.id === id ? { ...t, text } : t));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      console.error('useTranscript updateTurnText error:', err);
+    }
   }, [jobId]);
 
   const resetTranscript = useCallback(async () => {
     if (!jobId) return;
-    const resetTurns = await window.electronAPI.invoke(
-      'db:reset-transcript', { job_id: jobId }
-    ) as TranscriptTurn[];
-    setTurns(resetTurns);
+    try {
+      const resetTurns = await window.electronAPI.invoke(
+        'db:reset-transcript', { job_id: jobId }
+      ) as TranscriptTurn[];
+      setTurns(resetTurns);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      console.error('useTranscript resetTranscript error:', err);
+    }
   }, [jobId]);
 
   return { turns, speakerMappings, loading, error, renameSpeaker, getDisplayName, updateTurnText, resetTranscript };

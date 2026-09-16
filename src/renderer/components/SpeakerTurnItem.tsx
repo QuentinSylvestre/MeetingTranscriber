@@ -21,9 +21,20 @@ export default function SpeakerTurnItem({ turn, displayName, onRename, onSeek, o
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(turn.text);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync draft when turn.text changes externally (e.g. after reset)
-  useEffect(() => { setDraft(turn.text); }, [turn.text]);
+  // Sync draft when turn.text changes externally (e.g. after reset); also close edit mode
+  useEffect(() => {
+    setDraft(turn.text);
+    setEditing(false);
+  }, [turn.text]);
+
+  // Cleanup focus timer on unmount
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current);
+    };
+  }, []);
 
   // Auto-size textarea
   useEffect(() => {
@@ -37,7 +48,7 @@ export default function SpeakerTurnItem({ turn, displayName, onRename, onSeek, o
   const startEdit = () => {
     setDraft(turn.text);
     setEditing(true);
-    setTimeout(() => textareaRef.current?.focus(), 0);
+    focusTimerRef.current = setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const commitEdit = () => {
@@ -48,7 +59,7 @@ export default function SpeakerTurnItem({ turn, displayName, onRename, onSeek, o
       setDraft(turn.text);
       return;
     }
-    if (trimmed !== turn.text) onEditText(turn.id, trimmed);
+    if (trimmed !== turn.text.trim()) onEditText(turn.id, trimmed);
   };
 
   const isEdited = turn.text !== turn.original_text;

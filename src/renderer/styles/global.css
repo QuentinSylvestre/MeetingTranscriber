@@ -639,7 +639,7 @@ p  { color: var(--subtext0); line-height: 1.6; }
 /* Edited turn indicator */
 .speaker-turn--edited {
   border-left: 2px solid var(--accent);
-  padding-left: calc(var(--space-3) - 2px);
+  margin-left: -2px; /* extend border left without shifting content */
 }
 
 /* Turn text editor (textarea) */
