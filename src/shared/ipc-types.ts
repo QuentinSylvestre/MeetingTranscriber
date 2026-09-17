@@ -43,6 +43,17 @@ export interface ChunkResult {
   chunkDurationMs: number; // duration per chunk in ms (Infinity if no chunking)
 }
 
+export type SummaryErrorCode = 'missing_key' | 'empty_transcript' | 'invalid_summary' |
+  'refused' | 'incomplete' | 'timeout' | 'provider_error' | 'busy' | 'save_failed' |
+  'open_failed' | 'transcript_too_long' | 'bad_extension' | 'render_failed';
+/** Single source of truth for the summary model id: main sends it, the UI names it. */
+export const SUMMARY_MODEL = 'gpt-5.6-sol';
+export type SummaryResult = { status: 'saved'; filePath: string } | { status: 'canceled' } |
+  // canRetrySave marks a document that was paid for and rendered but not written: it
+  // is held in memory so the user can pick another destination without paying again.
+  { status: 'error'; error: SummaryErrorCode; canRetrySave?: boolean };
+export interface SummaryStateResult { filePath: string | null; canRetrySave: boolean; busy: boolean }
+
 // Settings channels
 export interface IpcChannels {
   'settings:has-secret': {
@@ -211,6 +222,22 @@ export interface IpcChannels {
   'export:to-clipboard': {
     request: { jobId: string };
     response: { copied: boolean };
+  };
+  'summary:generate': {
+    request: { jobId: string };
+    response: SummaryResult;
+  };
+  'summary:retry-save': {
+    request: { jobId: string };
+    response: SummaryResult;
+  };
+  'summary:state': {
+    request: { jobId: string };
+    response: SummaryStateResult;
+  };
+  'summary:open': {
+    request: { jobId: string };
+    response: { opened: boolean };
   };
 }
 

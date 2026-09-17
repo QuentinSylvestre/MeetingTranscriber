@@ -4,6 +4,7 @@ import { registerRecorderHandlers } from './recorder';
 import { registerChunkerHandlers } from './chunker';
 import { registerTranscriptionHandlers } from './transcription';
 import { registerExportHandlers } from './export';
+import { registerSummaryHandlers } from './summary';
 import { registerLifecycleIpcHandlers } from './lifecycle';
 import { recoverInterruptedJobs } from '../app-lifecycle';
 import { initDb } from '../db/index';
@@ -21,6 +22,7 @@ export function registerAllHandlers(): void {
   registerChunkerHandlers();
   registerTranscriptionHandlers();
   registerExportHandlers();
+  registerSummaryHandlers();
   registerLifecycleIpcHandlers();
   recoverInterruptedJobs(); // Mark any jobs that were in-progress during a crash as failed
 }

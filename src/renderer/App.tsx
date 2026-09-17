@@ -8,6 +8,7 @@ import HistoryView from './views/HistoryView';
 import ErrorBoundaryWithI18n from './components/ErrorBoundaryWithI18n';
 import Sidebar from './components/Sidebar';
 import { useSettings } from './hooks/useSettings';
+import { useSummary } from './hooks/useSummary';
 import type { Job } from '../shared/ipc-types';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
@@ -21,6 +22,7 @@ export default function App(): React.ReactElement {
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   const { getPreference } = useSettings();
+  const summary = useSummary();
 
   // Apply stored font-size preference on mount via CSS variables.
   // Two tiers: --font-size-base (content) and --font-size-ui (chrome = base−1px).
@@ -68,7 +70,12 @@ export default function App(): React.ReactElement {
               onCancel={() => { setIsTranscribing(false); setCurrentView('record'); }}
             />
           ) : currentView === 'transcript' && activeJobId && activeJobAudioPath ? (
-            <TranscriptView jobId={activeJobId} audioPath={activeJobAudioPath} />
+            <TranscriptView jobId={activeJobId} audioPath={activeJobAudioPath}
+              summaryState={summary.getState(activeJobId)} generatingJobId={summary.generatingJobId}
+              onGenerateSummary={() => void summary.generate(activeJobId)}
+              onOpenSummary={() => void summary.open(activeJobId)}
+              onRetrySaveSummary={() => void summary.retrySave(activeJobId)}
+              onRefreshSummary={() => void summary.refresh(activeJobId)} />
           ) : currentView === 'settings' ? (
             <SettingsView />
           ) : currentView === 'upload' ? (

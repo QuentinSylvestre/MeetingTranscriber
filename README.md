@@ -74,6 +74,28 @@ Transcript format (default): `[HH:MM:SS] Speaker Name: text`
 
 Timestamps can be disabled in **Settings → Export**.
 
+### Municipal council summary
+
+1. Add an **OpenAI API key** in Settings. Your transcription provider can remain AssemblyAI or any other supported provider.
+2. Open a completed transcript and finish any text or speaker-name corrections.
+3. Click **Compte rendu du conseil (.docx)** (or **Council summary (.docx)** in English) and confirm that you want to send the paid request.
+4. Choose where to save the document. Cancelling this dialog sends no API request and costs nothing.
+5. Wait for generation, then click **Open document** to open the saved DOCX.
+
+Each generation sends the current saved, timestamped transcript to OpenAI in one paid request using `gpt-5.6-sol` with medium reasoning. The OpenAI API project must have access to this model; a key that works for transcription may lack summary-model access. The API key stays in the existing encrypted store and the request uses `store: false`. No additional hosting, database migration, or Word installation is needed to generate a DOCX. Opening it requires an application associated with `.docx` files. The generated content is always French, independently of the interface language.
+
+The document includes meeting information, thematic discussion, decisions with their stated status, actions, inline verification notes with useful audio timestamps, and recap tables derived from the same topics. Proposed and conditional actions remain labeled. Unknown owners and deadlines remain unspecified. A condition that gates an action is recorded separately from a deadline, so a conditional next step is never reported as though it had an agreed date; the action recap shows it as `Sous condition : …`.
+
+Previous-minutes administrative wording is application-owned. Section 1 always renders the municipality's standing template. It inserts an explicitly quoted vote result when the transcript contains one, and otherwise falls back to the standing `à l'unanimité` mention. When the transcript does not establish the result, the document asks you to confirm that mention before signature and prints the recording position to re-listen to. This is deliberately confined to section 1: every other topic still refuses to assert a decision or vote result the transcript does not contain.
+
+The provider returns strict structured JSON, which is validated again locally. Source quotations are required for decisions, actions, vote results, owners, conditions and deadlines. A vote result must additionally be quoted from a passage other than the one establishing the decision, so an apparent agreement cannot be presented as a recorded vote.
+
+Claims the transcript does not support are removed individually rather than discarding the whole summary: an unsupported decision or action is dropped, an unsupported owner, condition or deadline is left unspecified, an unverifiable vote result is removed and the decision falls back to an apparent agreement. Every removal is written to the application log. Only malformed output is rejected outright. These checks reduce unsupported output but do not prove that a model interpreted the source correctly. Check important facts and verification notes against the recording before official use. Summaries are not stored in history; the saved DOCX is the result.
+
+V1 accepts up to 120,000 transcript characters, allows three minutes for the provider response, caps output at 24,000 tokens including reasoning, and makes no automatic retries. The character limit is derived from that token budget: the reference meeting is about 68,000 characters and produces roughly 7,800 output tokens, so 120,000 characters leaves around 10,000 tokens for reasoning. Raise the two together, and only after measuring a real run at the new length. Malformed, refused or incomplete output is rejected without saving a document. Errors appear in the Transcript view and say whether the request was charged. A new generation is a new paid request.
+
+The document is written to a temporary file and then moved into place, so a failure part-way through cannot truncate a report already at that path. If the write fails — most often because the file is open in Word — the rendered document is kept in memory and **Save to another location** writes it elsewhere without contacting the provider again. Saved locations are remembered only until the application closes.
+
 ## Known Limitations
 
 - **System audio capture (WASAPI loopback) is disabled** in this build. No prebuilt native addon (`naudiodon`) is available for the current Electron version. Microphone recording is fully functional.
@@ -91,3 +113,5 @@ npm run build  # Build production NSIS installer
 ```
 
 **Note**: `npm install` rebuilds native addons (`better-sqlite3`) for Electron. Running `npm test` requires rebuilding for the local Node.js version (`npm rebuild better-sqlite3 --prefer-offline` is included in the test script).
+
+Municipal-summary tests cover the schema, provider failures, export workflow and DOCX structure. `tests/fixtures/municipal-summary/` contains the supplied transcript and a hand-curated structured regression fixture; it checks the renderer and contract, not live model quality. The fixture follows the functional spec where the approved DOCX differs: implied follow-up tasks are not automatically commitments.

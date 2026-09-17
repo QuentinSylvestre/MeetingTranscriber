@@ -3,14 +3,31 @@ import AudioPlayer, { type AudioPlayerRef } from '../components/AudioPlayer';
 import SpeakerTurnItem from '../components/SpeakerTurnItem';
 import { useTranscript } from '../hooks/useTranscript';
 import { useI18n } from '../hooks/useI18n';
-import type { Job, TranscriptTurn } from '../../shared/ipc-types';
+import { SUMMARY_MODEL, type Job, type TranscriptTurn } from '../../shared/ipc-types';
+import type { SummaryState } from '../hooks/useSummary';
 
-interface Props { jobId: string; audioPath: string; }
+interface Props {
+  jobId: string; audioPath: string; summaryState: SummaryState; generatingJobId: string | null;
+  onGenerateSummary: () => void; onOpenSummary: () => void;
+  onRetrySaveSummary: () => void; onRefreshSummary: () => void;
+}
 
-export default function TranscriptView({ jobId, audioPath }: Props): React.ReactElement {
+export default function TranscriptView({ jobId, audioPath, summaryState, generatingJobId, onGenerateSummary, onOpenSummary, onRetrySaveSummary, onRefreshSummary }: Props): React.ReactElement {
   const { t } = useI18n();
   const { turns, loading, error, renameSpeaker, getDisplayName, updateTurnText, resetTranscript } = useTranscript(jobId);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
+  const summarizing = generatingJobId === jobId;
+  const { error: summaryError, filePath: summaryPath, canRetrySave } = summaryState;
+
+  // Recover a document main may already hold for this job, so a renderer reload
+  // during a paid generation does not orphan the result.
+  useEffect(() => { onRefreshSummary(); }, [jobId]);
+
+  // The request is paid and cannot be cancelled, so it gets the same explicit
+  // confirmation the destructive Reset action already uses.
+  const confirmAndGenerate = () => {
+    if (window.confirm(t('summary_confirm'))) onGenerateSummary();
+  };
 
   // Job title state and inline editing
   const [jobTitle, setJobTitle] = useState<string>('');
@@ -110,7 +127,11 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
             {isChunked ? ` · ${groups.size} ${t('transcript_subtitle_chunks')}` : ''}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button className="btn btn-primary btn-sm" disabled={generatingJobId !== null || turns.length === 0}
+            onClick={confirmAndGenerate} title={`${t('summary_hint')} — ${SUMMARY_MODEL}`}>
+            {summarizing ? t('summary_generating') : t('summary_generate')}
+          </button>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => {
@@ -133,6 +154,16 @@ export default function TranscriptView({ jobId, audioPath }: Props): React.React
       </div>
 
       {error && <p className="text-error text-sm mb-4">{error}</p>}
+      {summaryError && <p role="alert" className="text-error text-sm mb-4">
+        {t(`summary_error_${summaryError}`)}{' '}
+        {canRetrySave && <button className="btn btn-ghost btn-sm" disabled={generatingJobId !== null}
+          onClick={onRetrySaveSummary}>{t('summary_retry_save')}</button>}
+      </p>}
+      {summarizing && <p role="status" className="text-sm mb-4">{t('summary_working')}</p>}
+      {summaryPath && <div role="status" className="text-sm mb-4">
+        {t('summary_saved')} <span className="selectable" style={{ overflowWrap: 'anywhere' }}>{summaryPath}</span>{' '}
+        <button className="btn btn-ghost btn-sm" onClick={onOpenSummary}>{t('summary_open')}</button>
+      </div>}
 
       {/* Audio player */}
       <AudioPlayer ref={audioPlayerRef} src={audioUrl} />
