@@ -50,6 +50,8 @@ By default, recordings are saved to `Documents\MeetingTranscriber\`. You can cha
 5. Click **Stop** when done.
 6. The app will prompt you to transcribe immediately.
 
+While recording, an input level meter shows what is actually reaching the application. If the input stays silent for fifteen seconds the meter turns red and the view says so, because a dead input is otherwise indistinguishable from a working one until the meeting is over. A muted microphone and a headset connected for output only both produce this. The wait is long enough that an ordinary pause in a quiet room does not trigger it. When Windows reports no microphone at all, **Record** is disabled and the view says why rather than failing at the moment you click it.
+
 ### Upload an existing recording
 
 1. Open the **Upload** view.

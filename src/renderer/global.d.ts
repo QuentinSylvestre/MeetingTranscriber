@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * The single declaration of what the preload exposes on window. It previously lived in
  * two hooks with different shapes: TypeScript merges interface declarations but keeps

@@ -396,6 +396,41 @@ p  { color: var(--subtext0); line-height: 1.6; }
   50%       { opacity: 0.2; }
 }
 
+/* Input level meter — shown only while a recording is in progress. */
+.record-level {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  max-width: 520px;
+}
+
+.record-level-label {
+  font-size: calc(var(--font-size-ui) - 1px);
+  color: var(--overlay1);
+  flex-shrink: 0;
+}
+
+.record-level-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface0);
+  overflow: hidden;
+}
+
+.record-level-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--success);
+  /* Snappy on the way up, gentle on the way down, so the bar reads as a level
+     rather than flickering at the 10 Hz refresh rate. */
+  transition: width 0.1s linear, background 0.2s ease;
+}
+
+.record-level-fill.is-silent { background: var(--error); }
+.record-level-fill.is-loud   { background: var(--warning); }
+
 .record-controls {
   display: flex;
   align-items: center;

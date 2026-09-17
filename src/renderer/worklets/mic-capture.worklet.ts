@@ -25,6 +25,12 @@ const BATCH_FRAMES = Math.round(44100 * 0.05); // 2205 samples = ~50 ms at 44100
 class MicCaptureProcessor extends AudioWorkletProcessor {
   private buffer: Int16Array;
   private bufferOffset = 0;
+  /**
+   * Loudest absolute sample in the batch being accumulated, 0..1. Tracked here rather
+   * than in the renderer because this loop already visits every sample; the renderer
+   * would have to walk the batch a second time on the thread that draws the UI.
+   */
+  private peak = 0;
 
   constructor(options: AudioWorkletNodeOptions) {
     super(options);
@@ -44,6 +50,8 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
       const s = channel[i];
       // Clamp to [-1, 1] before scaling to avoid overflow.
       const clamped = s > 1 ? 1 : s < -1 ? -1 : s;
+      const magnitude = clamped < 0 ? -clamped : clamped;
+      if (magnitude > this.peak) this.peak = magnitude;
       this.buffer[this.bufferOffset++] = Math.round(clamped * 32767);
     }
 
@@ -51,7 +59,8 @@ class MicCaptureProcessor extends AudioWorkletProcessor {
     if (this.bufferOffset >= BATCH_FRAMES) {
       // Slice exactly BATCH_FRAMES samples — any overflow stays in buffer.
       const batch = this.buffer.slice(0, BATCH_FRAMES);
-      this.port.postMessage({ type: 'pcm', data: batch });
+      this.port.postMessage({ type: 'pcm', data: batch, peak: this.peak });
+      this.peak = 0;
 
       // Shift the overflow to the front of the buffer.
       const overflow = this.bufferOffset - BATCH_FRAMES;

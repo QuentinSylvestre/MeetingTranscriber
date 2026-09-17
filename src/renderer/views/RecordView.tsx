@@ -4,12 +4,23 @@ import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
 import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
 import type { SpeakerCountMode } from '../hooks/useSpeakerCountHint';
+import type { RecorderErrorCode } from '../hooks/useRecorder';
+import type { I18nKey } from '../i18n';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
 
 interface RecordViewProps {
   onJobStarted?: (jobId: string, audioPath: string) => void;
 }
+
+/** Explicit map rather than a built key, so a missing translation fails the build. */
+const RECORDER_ERROR_KEY: Record<RecorderErrorCode, I18nKey> = {
+  mic_not_found: 'record_error_mic_not_found',
+  mic_denied: 'record_error_mic_denied',
+  mic_busy: 'record_error_mic_busy',
+  audio_engine: 'record_error_audio_engine',
+  unknown: 'record_error_unknown',
+};
 
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -22,6 +33,8 @@ function formatDuration(ms: number): string {
 export default function RecordView({ onJobStarted }: RecordViewProps): React.ReactElement {
   const { t } = useI18n();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  // Distinguishes "no microphones" from "not enumerated yet" — both are an empty list.
+  const [devicesEnumerated, setDevicesEnumerated] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<ProviderName>('assemblyai');
   const [selectedLanguage, setSelectedLanguage] = useState<'fr'|'en'|'auto'>('fr');
@@ -30,7 +43,10 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const { getPreference, hasSecret } = useSettings();
-  const { status, durationMs, error: recorderError, start, pause, resume, stop } = useRecorder((_jobId) => {});
+  const {
+    status, durationMs, error: recorderError, inputLevel, inputSilent,
+    start, pause, resume, stop,
+  } = useRecorder((_jobId) => {});
   const [error, setError] = useState<string | null>(null);
   const {
     speakerMode, setSpeakerMode,
@@ -45,7 +61,9 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
     const enumerate = () =>
       navigator.mediaDevices.enumerateDevices()
         .then(all => setDevices(all.filter(d => d.kind === 'audioinput')))
-        .catch(() => {});
+        .catch(() => setDevices([]))
+        // Either way the list is now as good as it gets, so the view may act on it.
+        .finally(() => setDevicesEnumerated(true));
     enumerate();
     navigator.mediaDevices.addEventListener('devicechange', enumerate);
     return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate);
@@ -110,7 +128,14 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   };
 
   const isIdle = status === 'idle';
-  const displayError = recorderError || error;
+  // Chromium reports one audioinput entry per device even before labels are unlocked,
+  // so an empty list means there is genuinely no microphone — not merely a hidden one.
+  const noMicrophone = devicesEnumerated && devices.length === 0;
+  const displayError = recorderError ? t(RECORDER_ERROR_KEY[recorderError]) : error;
+  const isCapturing = status === 'recording' || status === 'paused';
+  // Speech peaks around 0.1-0.3, so a linear bar would barely leave the left edge.
+  // The square root spreads the quiet end out enough to see the meter move at all.
+  const levelPercent = Math.min(100, Math.round(Math.sqrt(inputLevel) * 100));
   // Only mark the speaker-count fields invalid while #form-error is actually
   // showing THEIR error — otherwise a later, unrelated error (or a cleared
   // error) leaves a stale aria-describedby pointing at the wrong content.
@@ -134,6 +159,32 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
         )}
       </div>
 
+      {/* Input level — the only signal that a recording in progress is actually
+          capturing sound. A dead input is otherwise indistinguishable from a live one
+          until the meeting is over and the file turns out to be silent. */}
+      {isCapturing && (
+        <div className="record-level">
+          <span className="record-level-label">{t('record_input_level_label')}</span>
+          <div
+            className="record-level-track"
+            role="meter"
+            aria-label={t('record_input_level_label')}
+            aria-valuenow={levelPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className={`record-level-fill${inputSilent ? ' is-silent' : ''}${levelPercent > 94 ? ' is-loud' : ''}`}
+              style={{ width: `${levelPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {isCapturing && inputSilent && (
+        <p className="text-error text-sm mb-4" role="alert">{t('record_input_silent')}</p>
+      )}
+
       {/* Controls */}
       <div className="record-controls mb-6">
         {status === 'idle' && (
@@ -143,10 +194,15 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
                 {t('provider_key_missing_banner').replace('{{provider}}', PROVIDER_LABELS[selectedProvider])}
               </p>
             )}
+            {noMicrophone && (
+              <p className="text-error text-sm mb-4" role="alert">
+                {t('record_no_microphone_banner')}
+              </p>
+            )}
             <button
               className="btn btn-primary btn-lg"
               onClick={handleStart}
-              disabled={!isIdle || !prefsLoaded}
+              disabled={!isIdle || !prefsLoaded || noMicrophone}
             >
               {t('record_btn_start')}
             </button>
@@ -178,9 +234,11 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
               className="form-select"
               value={selectedDevice}
               onChange={e => setSelectedDevice(e.target.value)}
-              disabled={!isIdle}
+              disabled={!isIdle || noMicrophone}
             >
-              <option value="">{t('record_microphone_default')}</option>
+              <option value="">
+                {noMicrophone ? t('record_microphone_none') : t('record_microphone_default')}
+              </option>
               {devices.map(d => (
                 <option key={d.deviceId} value={d.deviceId}>
                   {d.label || `Device ${d.deviceId.substring(0,8)}`}
