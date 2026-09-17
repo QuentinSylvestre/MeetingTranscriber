@@ -114,6 +114,6 @@ npm test       # Run Vitest unit tests
 npm run build  # Build production NSIS installer
 ```
 
-**Note**: `npm install` rebuilds native addons (`better-sqlite3`) for Electron. Running `npm test` requires rebuilding for the local Node.js version (`npm rebuild better-sqlite3 --prefer-offline` is included in the test script).
+**Note**: `better-sqlite3` is a native addon and can only be built for one target at a time — Electron for `npm run dev` and packaging, Node for the test runner. Both directions repair themselves: `npm install` and `npm run dev` build for Electron, and `npm test` builds for Node before running. Switching between running the app and running the tests needs no manual step.
 
 Municipal-summary tests cover the schema, provider failures, export workflow and DOCX structure. `tests/fixtures/municipal-summary/` contains the supplied transcript and a hand-curated structured regression fixture; it checks the renderer and contract, not live model quality. The fixture follows the functional spec where the approved DOCX differs: implied follow-up tasks are not automatically commitments.

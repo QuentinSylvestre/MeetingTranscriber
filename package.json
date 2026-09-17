@@ -10,6 +10,7 @@
     "dev": "node scripts/rebuild-native.cjs && vite",
     "build": "tsc --noEmit && electron-builder",
     "preview": "electron .",
+    "pretest": "node scripts/native-for-node.cjs",
     "test": "vitest run",
     "postinstall": "node scripts/rebuild-native.cjs"
   },

@@ -1,33 +1,29 @@
 import { defineConfig } from 'vitest/config';
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { createRequire } from 'module';
 
-// If the better-sqlite3 native binary was built for Electron (ABI 135) rather
-// than the current Node version, the DB test suite will crash at import.
-// Detect this by checking the binary's module version header.
-function sqliteBuiltForCurrentNode(): boolean {
-  const nodePath = join('node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
-  if (!existsSync(nodePath)) return false;
+// better-sqlite3 can only be built for one target at a time: Electron for packaging and
+// `npm run dev`, Node for the test runner. This used to drop tests/unit/db.test.ts from
+// the run when the addon was built for Electron, which meant the suite quietly shrank
+// from 16 files to 15 with everything still green — a dropped suite that looked like a
+// passing one. Fail loudly instead; `npm test` runs scripts/native-for-node.cjs first
+// and repairs the addon, so reaching this error means that step was bypassed.
+function assertSqliteBuiltForCurrentNode(): void {
+  const require = createRequire(import.meta.url);
   try {
-    // readFileSync the first 64 bytes and check the NODE_MODULE_VERSION
-    const { readFileSync } = require('fs');
-    const buf: Buffer = readFileSync(nodePath);
-    // NODE_MODULE_VERSION is at offset 0x28 in the PE header for .node files
-    // Simpler: just try to dlopen it
-    process.dlopen({ exports: {} } as NodeModule, require.resolve('./node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
-    return true;
+    process.dlopen({ exports: {} } as NodeModule,
+      require.resolve('better-sqlite3/build/Release/better_sqlite3.node'));
   } catch {
-    return false;
+    throw new Error(
+      'better-sqlite3 is not built for this Node version, so the database tests cannot load it.\n' +
+      'Run `npm test`, which repairs this automatically, or `npm rebuild better-sqlite3 --prefer-offline`.',
+    );
   }
 }
 
-const includeDb = sqliteBuiltForCurrentNode();
+assertSqliteBuiltForCurrentNode();
 
 export default defineConfig({
   test: {
-    exclude: [
-      'node_modules/**',
-      ...(includeDb ? [] : ['tests/unit/db.test.ts']),
-    ],
+    exclude: ['node_modules/**'],
   },
 });

@@ -13,4 +13,6 @@
 
 Run tests from the repo root with `npm test`; do not run `vitest` directly.
 
-`npm test` does **not** rebuild native addons — it only runs `vitest run`. Anything that triggers `postinstall` (including `npm install --package-lock-only`) rebuilds `better-sqlite3` for Electron, and `vitest.config.ts` then **silently excludes** `tests/unit/db.test.ts` rather than failing. The suite shrinks from 16 files to 15 with every remaining test still green, so a dropped suite is easy to miss. After any install, run `npm rebuild better-sqlite3 --prefer-offline` and confirm the file count is back to 16.
+`better-sqlite3` can only be built for one target at a time: Electron for `npm run dev` and packaging, Node for the test runner. Both directions now repair themselves — `pretest` rebuilds for Node, `dev` and `postinstall` rebuild for Electron — so no manual step is needed when switching between running the app and running the tests.
+
+Running `vitest` directly bypasses `pretest`, and the config then fails with an explicit message rather than starting. It previously excluded `tests/unit/db.test.ts` instead, which shrank the suite from 16 files to 15 with every remaining test still green — a dropped suite that looked like a passing one. **The suite is 16 files; a run reporting 15 means something is wrong.**
