@@ -6,3 +6,7 @@ dist-main/
 *.node
 .env
 *.log
+
+# One-off summary evaluation harness output (paid model runs)
+scripts/.eval-output/
+dist-eval/
