@@ -22,19 +22,40 @@ const ACTION_LABELS: Record<SummaryTopic['actions'][number]['type'], string> = {
   conditional: 'Action conditionnelle',
 };
 
-function paragraph(text: string, bold = false): Paragraph {
-  return new Paragraph({ children: [new TextRun({ text, bold })] });
+/**
+ * The Markdown the model may use inside a prose field: `**bold**` spans, and lines
+ * opening with `- ` for list items, indented two spaces per nesting level. Deliberately
+ * small — the renderer owns headings, tables and the document hierarchy, so the model
+ * only ever describes emphasis and enumeration. Anything else stays literal text.
+ */
+const BOLD_SPAN = /\*\*(.+?)\*\*/g;
+const LIST_ITEM = /^(\s*)[-–—•*]\s+(.+)$/;
+const MAX_LIST_LEVEL = 2;
+
+/** Split one line into runs, turning `**…**` into bold and leaving the rest literal. */
+function runs(text: string, bold = false): TextRun[] {
+  const parts: TextRun[] = [];
+  let at = 0;
+  for (const match of text.matchAll(BOLD_SPAN)) {
+    if (match.index > at) parts.push(new TextRun({ text: text.slice(at, match.index), bold }));
+    parts.push(new TextRun({ text: match[1], bold: true }));
+    at = match.index + match[0].length;
+  }
+  if (at < text.length) parts.push(new TextRun({ text: text.slice(at), bold }));
+  return parts.length ? parts : [new TextRun({ text, bold })];
 }
 
-/**
- * Body text, one paragraph per line. A line opening with a list marker becomes a real
- * bullet rather than a paragraph starting with a stray hyphen, so an enumeration the
- * model writes out reads as a list in Word.
- */
+function paragraph(text: string, bold = false): Paragraph {
+  return new Paragraph({ children: runs(text, bold) });
+}
+
+/** Body text, one paragraph per line, with list lines rendered as real bullets. */
 function prose(text: string): Paragraph[] {
   return text.split(/\r?\n/).filter(line => line.trim()).map(line => {
-    const item = /^\s*[-–—•*]\s+(.+)$/.exec(line);
-    return item ? new Paragraph({ text: item[1].trim(), bullet: { level: 0 } }) : paragraph(line);
+    const item = LIST_ITEM.exec(line);
+    if (!item) return paragraph(line);
+    const level = Math.min(Math.floor(item[1].replace(/\t/g, '  ').length / 2), MAX_LIST_LEVEL);
+    return new Paragraph({ children: runs(item[2].trim()), bullet: { level } });
   });
 }
 
@@ -47,7 +68,7 @@ function heading(text: string, level: 1 | 2 | 3): Paragraph {
 
 function labeledText(label: string, text: string, keepNext = false): Paragraph {
   return new Paragraph({ keepNext, children: [
-    new TextRun({ text: `${label} : `, bold: true }), new TextRun(text),
+    new TextRun({ text: `${label} : `, bold: true }), ...runs(text),
   ] });
 }
 
@@ -74,7 +95,9 @@ function table(rows: string[][], widths: number[], hasHeader: boolean): Table {
           ? { type: ShadingType.CLEAR, fill: 'E8EEF4' } : undefined,
         children: [new Paragraph({
           spacing: { after: 0, line: 240 },
-          children: [new TextRun({ text, bold: hasHeader ? rowIndex === 0 : columnIndex === 0 })],
+          // Recap cells carry model prose too, so emphasis is honoured rather than
+          // printed as literal asterisks.
+          children: runs(text, hasHeader ? rowIndex === 0 : columnIndex === 0),
         })],
       })),
     })),
@@ -113,7 +136,7 @@ function renderTopic(topic: SummaryTopic, number: number, followUp: boolean, tra
   const list = (title: string, values: string[]) => {
     if (!values.length) return;
     output.push(heading(title, subsectionLevel));
-    output.push(...values.map(text => new Paragraph({ text, bullet: { level: 0 } })));
+    output.push(...values.map(text => new Paragraph({ children: runs(text), bullet: { level: 0 } })));
   };
 
   // Section 1 only. The municipality's standing template always carries the unanimity

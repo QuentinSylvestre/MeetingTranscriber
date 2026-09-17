@@ -125,6 +125,27 @@ describe('municipal summary DOCX', () => {
     ]);
   });
 
+  it('applies the bold span, nests list levels, and leaves other syntax literal', async () => {
+    const result = await render(summary([topic({
+      context: 'Le montant de **4 200 €** est évoqué.\n- premier niveau ;\n  - sous-niveau ;\n    - niveau plus profond.',
+      objections: ['Réserve sur le **passage étroit**.'],
+      conclusion: 'Aucune syntaxe supplémentaire : # pas un titre, | pas un tableau.',
+    })]));
+    const paragraphs = [...result.document.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map(p => p[0]);
+    const boldRuns = paragraphs.flatMap(p => [...p.matchAll(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<w:b\s*\/>[\s\S]*?<\/w:r>/g)]
+      .map(r => xmlText(r[0]).join('')));
+    // Only the marked spans are bold; the surrounding sentence is not.
+    expect(boldRuns).toEqual(expect.arrayContaining(['4 200 €', 'passage étroit']));
+    expect(result.text).toContain('Le montant de ');
+    expect(result.text).not.toContain('**');
+    // Indentation maps to nesting, capped at two levels deep.
+    const levels = paragraphs.filter(p => p.includes('w:numPr'))
+      .map(p => Number((p.match(/<w:ilvl w:val="(\d+)"/) || [])[1] ?? -1));
+    expect(levels).toEqual([0, 1, 2, 0]); // three nested items, then the objection
+    // Unsupported syntax is not interpreted, just printed.
+    expect(result.text).toContain('# pas un titre, | pas un tableau.');
+  });
+
   it('renders an enumeration as bullets and leaves running prose alone', async () => {
     const result = await render(summary([topic({
       context: 'Trois conventions sont proposées :\n- suppression du transformateur ;\n- passage d’un câble ;\n- pose d’une armoire.',
