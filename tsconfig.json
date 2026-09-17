@@ -4,6 +4,9 @@
     "module": "ESNext",
     "lib": ["ESNext", "DOM"],
     "strict": true,
+    // @types/node and electron both declare process.noDeprecation with different
+    // modifiers, which fails the build over a conflict in someone else's types.
+    "skipLibCheck": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

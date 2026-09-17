@@ -14,17 +14,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { RecorderProgress } from '../../shared/ipc-types';
 
-// Window type augmentation — matches what preload/index.ts exposes.
-declare global {
-  interface Window {
-    electronAPI: {
-      invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
-      on: (channel: string, listener: (...args: unknown[]) => void) => void;
-      off: (channel: string, listener: (...args: unknown[]) => void) => void;
-    };
-    appVersion: { version: string };
-  }
-}
+// The Window shape is declared once, in src/renderer/global.d.ts.
 
 export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'stopping';
 

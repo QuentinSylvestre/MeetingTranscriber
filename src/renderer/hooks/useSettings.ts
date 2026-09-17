@@ -1,13 +1,8 @@
 import { useCallback } from 'react';
 import type { ProviderName, PreferenceKey } from '../../shared/ipc-types';
 
-// Typed wrapper around window.electronAPI.invoke
-declare global {
-  interface Window {
-    electronAPI: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> };
-    appVersion: { version: string };
-  }
-}
+// Typed wrapper around window.electronAPI.invoke. The Window shape is declared once,
+// in src/renderer/global.d.ts.
 
 export function useSettings() {
   const hasSecret = useCallback(async (key: string): Promise<boolean> => {

@@ -227,7 +227,14 @@ export class GoogleProvider implements TranscriptionProvider {
         'X-Goog-Upload-Offset': '0',
         'X-Goog-Upload-Command': 'upload, finalize',
       },
-      body: fileBuffer,
+      // A Node Buffer is not a BodyInit. Wrap it in a view rather than casting the
+      // whole body: the offset and length matter because readFileSync can return a
+      // slice of a pooled ArrayBuffer, and new Uint8Array(buf.buffer) would then
+      // upload the entire pool. The buffer cast narrows ArrayBufferLike to the
+      // ArrayBuffer that BodyInit requires; a file read is never backed by a
+      // SharedArrayBuffer.
+      body: new Uint8Array(
+        fileBuffer.buffer as ArrayBuffer, fileBuffer.byteOffset, fileBuffer.byteLength),
       signal,
     });
 
