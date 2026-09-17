@@ -26,8 +26,16 @@ function paragraph(text: string, bold = false): Paragraph {
   return new Paragraph({ children: [new TextRun({ text, bold })] });
 }
 
+/**
+ * Body text, one paragraph per line. A line opening with a list marker becomes a real
+ * bullet rather than a paragraph starting with a stray hyphen, so an enumeration the
+ * model writes out reads as a list in Word.
+ */
 function prose(text: string): Paragraph[] {
-  return text.split(/\r?\n/).filter(line => line.trim()).map(line => paragraph(line));
+  return text.split(/\r?\n/).filter(line => line.trim()).map(line => {
+    const item = /^\s*[-–—•*]\s+(.+)$/.exec(line);
+    return item ? new Paragraph({ text: item[1].trim(), bullet: { level: 0 } }) : paragraph(line);
+  });
 }
 
 function heading(text: string, level: 1 | 2 | 3): Paragraph {
@@ -200,11 +208,23 @@ export async function renderSummaryDocx(summary: MeetingSummary, transcript?: st
   }
 
   const orderedTopics = [...agenda, ...followUps];
-  const decisions = orderedTopics.flatMap(topic => topic.decision ? [[
-    topic.title,
-    topic.decision.text + (topic.decision.voteResult ? ` Résultat du vote : ${topic.decision.voteResult}` : ''),
-    DECISION_LABELS[topic.decision.type],
-  ]] : []);
+  // A topic can settle a direction without producing anything the model will call a
+  // decision — a file sent on for an external opinion, say. Falling back to the
+  // conclusion keeps it in the recap: omitting the row reads as "nothing was decided",
+  // when the truth is "a direction was set, but not a deliberation".
+  const decisions = orderedTopics.flatMap(topic => {
+    if (topic.decision) return [[
+      topic.title,
+      topic.decision.text + (topic.decision.voteResult ? ` Résultat du vote : ${topic.decision.voteResult}` : ''),
+      DECISION_LABELS[topic.decision.type],
+    ]];
+    // Formal agenda business only. Models write a conclusion for almost every topic,
+    // so falling back for follow-ups too would turn a decisions recap into a list of
+    // every subject discussed; those are already covered by their own sections and by
+    // the action recap.
+    return topic.category === 'agenda_item' && topic.conclusion
+      ? [[topic.title, topic.conclusion, 'Pas de décision formelle']] : [];
+  });
   if (decisions.length) children.push(
     heading('Récapitulatif des décisions / accords', 1),
     table([['Sujet', 'Décision ou orientation', 'Certitude'], ...decisions], [2500, 5486, 2100], true),

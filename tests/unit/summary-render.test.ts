@@ -106,6 +106,41 @@ describe('municipal summary DOCX', () => {
     expect(result.text).not.toMatch(/SOURCE_|unanimité|Résultat du vote|Engagement explicite/);
   });
 
+  it('keeps a settled topic in the decisions recap when the model reports no decision', async () => {
+    // Observed live on a staff-grading item with two different models: a direction was set
+    // and stated in the conclusion, but neither returned a decision object.
+    const result = await render(summary([
+      topic({ title: 'Avancement de grade', decision: null,
+        conclusion: 'Le projet part au CDG puis reviendra au conseil s’il est validé.' }),
+      topic({ title: 'Sans suite', decision: null, conclusion: null }),
+      // Follow-ups almost always carry a conclusion, so including them would turn the
+      // decisions recap into a list of every subject discussed.
+      topic({ title: 'Suivi de dossier', category: 'follow_up', decision: null,
+        conclusion: 'Le dossier suit son cours chez le notaire.' }),
+    ]));
+    expect(xmlText(result.tables[1])).toEqual([
+      'Sujet', 'Décision ou orientation', 'Certitude',
+      'Avancement de grade', 'Le projet part au CDG puis reviendra au conseil s’il est validé.',
+      'Pas de décision formelle',
+    ]);
+  });
+
+  it('renders an enumeration as bullets and leaves running prose alone', async () => {
+    const result = await render(summary([topic({
+      context: 'Trois conventions sont proposées :\n- suppression du transformateur ;\n- passage d’un câble ;\n- pose d’une armoire.',
+      discussion: [{ title: null, body: 'Le tracé par le stade est préféré à une ouverture de chaussée.' }],
+    })]));
+    const bullets = [...result.document.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)]
+      .filter(p => p[0].includes('w:numPr'))
+      .map(p => xmlText(p[0]).join(''));
+    expect(bullets).toEqual([
+      'suppression du transformateur ;', 'passage d’un câble ;', 'pose d’une armoire.',
+    ]);
+    // The lead-in and the discussion paragraph stay as ordinary text.
+    expect(result.text).toContain('Trois conventions sont proposées :');
+    expect(result.text).not.toMatch(/-\s*suppression/);
+  });
+
   it('renders approved previous minutes with app wording, missing date dots, and all verification notes', async () => {
     const result = await render(summary([topic({
       title: 'Procès-verbal précédent', renderHint: 'previous_minutes_approval',
