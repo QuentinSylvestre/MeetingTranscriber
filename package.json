@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/rebuild-native.cjs && vite",
-    "build": "tsc --noEmit && electron-builder",
+    "build": "tsc --noEmit && vite build && node scripts/rebuild-native.cjs && electron-builder",
     "preview": "electron .",
     "pretest": "node scripts/native-for-node.cjs",
     "test": "vitest run",

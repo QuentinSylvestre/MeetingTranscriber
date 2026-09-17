@@ -26,7 +26,10 @@ function createWindow(): BrowserWindow {
       log.error('Failed to load dev URL:', err);
     });
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html')).catch((err: Error) => {
+    // Vite builds the renderer to dist/ and this file to dist-electron/, so the HTML is
+    // one level up in dist/. This read '../renderer/index.html' until now, a directory
+    // Vite has never emitted, so the packaged window had nothing to load.
+    win.loadFile(path.join(__dirname, '../dist/index.html')).catch((err: Error) => {
       log.error('Failed to load app HTML:', err);
     });
   }

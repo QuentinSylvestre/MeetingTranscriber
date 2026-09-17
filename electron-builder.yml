@@ -8,6 +8,17 @@ files:
   - dist-electron/**/*
   - dist/**/*
   - package.json
+  # naudiodon is a declared dependency that nothing imports: WASAPI loopback is a stub
+  # for v1 (src/main/recorder/loopback.ts) and the module has no prebuilt for Electron 36.
+  # Shipping its source would be dead weight.
+  - "!node_modules/naudiodon/**"
+
+# scripts/rebuild-native.cjs already builds better-sqlite3 against the installed Electron
+# version, and is run by postinstall, dev and the build script. electron-builder's own
+# rebuild is disabled because it additionally tries to compile naudiodon, which needs a
+# Windows SDK that is not installed and produces nothing this app uses. That failure only
+# ever surfaced at packaging time, which is why it went unnoticed until the first build.
+npmRebuild: false
 
 asar: true
 asarUnpack:
