@@ -322,9 +322,21 @@ New `tests/unit/export/transcript-docx.test.ts` (permitted under this project's 
 3. `JobProgressView.tsx`: wrap the existing progress-bar + `.progress-log` + Cancel button (`:49-82`) inside `<Modal title={t('progress_title')} onCancel={handleCancel} cancelLabel={t('progress_btn_cancel')}>...</Modal>` instead of rendering them as a plain page body. **Drop the inner `.page-header`'s own `page-title` markup** (`:42-43`, which independently renders the same `t('progress_title')` text `Modal`'s `title` prop now owns) — only its `page-subtitle` (the done/failed/processing status line, `:44-46`) renders inside the modal as `children`, alongside the done-message block (`:56-60`). `Modal`'s `title` prop is the single place `progress_title` is rendered; nothing else duplicates it.
 
 **Exit criteria**:
-- [ ] Starting a transcription (Record or Upload) shows a centered modal with a spinner, the existing scrolling log, and a working Cancel button — not a plain full page.
-- [ ] Cancel still calls `transcription:cancel-job` and returns to the prior view, unchanged from today's behavior.
-- [ ] The modal backdrop visually dims whatever is behind it (there should be nothing clickable behind it in this phase, since transcription still takes over navigation — this is a visual/structural check only).
+- [x] Starting a transcription (Record or Upload) shows a centered modal with a spinner, the existing scrolling log, and a working Cancel button — not a plain full page.
+- [x] Cancel still calls `transcription:cancel-job` and returns to the prior view, unchanged from today's behavior.
+- [x] The modal backdrop visually dims whatever is behind it (there should be nothing clickable behind it in this phase, since transcription still takes over navigation — this is a visual/structural check only).
+
+**Implementation (2026-09-18, code: 7dc003a — dispatched as a [P:5] parallel group alongside Phase 5)**
+
+Added `src/renderer/components/Modal.tsx` (props: `title`, `children?`, `onCancel?`, `cancelLabel?`; `.modal-backdrop` > `.modal-card` > `.modal-spinner` + `.modal-title` + children + conditional Cancel button), following the plan's sketch with this project's own `interface Props` naming convention. Added `.modal-backdrop`/`.modal-card`/`.modal-title`/`.modal-spinner` CSS to `global.css` matching the existing design-token vocabulary and `@keyframes` authoring style; added `align-self: stretch` to `.progress-log`/`.progress-bar-track` so they fill the modal card's width. `JobProgressView.tsx` now wraps its content in `<Modal title={t('progress_title')} onCancel={!done ? handleCancel : undefined} cancelLabel={t('progress_btn_cancel')}>`; the old duplicate `.page-header` title was removed (grep-confirmed `progress_title` now renders in exactly one place).
+
+Verified via live CDP inspection of the real app (no real transcription job started, to avoid unnecessary provider cost for a presentational-only check): computed styles confirmed the backdrop is viewport-fixed and dims correctly, the card uses the correct design tokens, the spinner animates, and `.progress-log`/`.progress-bar-track` fill the card's content width. Traced the real DOM ancestor chain and confirmed no ancestor establishes a containing block that would break `position: fixed`.
+
+**QA (Step 5b)**: PASS (live CDP verification as above). Dev instance confirmed fully torn down afterward.
+
+**Divergence flagged for review**: `.modal-spinner` renders unconditionally per the plan's own sketch (no visibility prop), so on a failed/cancelled job the spinner keeps animating next to the "failed" status text until the user clicks Cancel — a minor presentational difference from the old view, which hid its progress indicator once `failed` was true. Not fixed unilaterally: `Modal`'s prop contract is also consumed by Phase 8 (summary-generation modal), and changing it without coordinating could conflict with that phase's usage. Left for review to adjudicate.
+
+**Review fixes (code: 1f6d4d8)**: added `spinner?: boolean` (default `true`, so Phase 8's call site needs no change) to `Modal`, adjudicated as a real, worth-fixing regression — `JobProgressView` now passes `spinner={!done && !failed}`. Fixed a Medium accessibility gap the review found squarely relevant to Phase 8's own SC-6 purpose ("block all interactions underneath during a non-cancellable paid request"): the backdrop blocked mouse clicks but had no keyboard focus trap, so a keyboard user could `Tab` past it into the sidebar nav. `Modal` now renders as a native `<dialog>` shown via `showModal()`, giving a real focus trap and top-layer rendering for free, with Escape wired to mirror the visible Cancel button (a documented Chromium quirk means a second Escape with no intervening interaction can still close the dialog natively — low-exposure given how the app actually uses `Modal`, noted in code). Also fixed: `cancelLabel` now defaults to `'Cancel'` so an `onCancel`-only caller can't render a blank button; a `text-align` tug-of-war between `.modal-card` and `.progress-log` resolved by scoping centering to `.modal-title` only; `aria-label` duplication replaced with `aria-labelledby` referencing `.modal-title`'s own `id`. Not fixed (explicitly out of scope, noted by review): portal/stacking-context safety was only verified for this phase's own mount point (under `App.tsx`) — Phase 8 mounts `Modal` under `TranscriptView`'s different DOM ancestry, which should be independently re-verified when that phase lands.
 
 ### Phase 5: Provider adapter widening — usage/duration capture [QA] [P:4]
 
@@ -350,9 +362,27 @@ New `tests/unit/export/transcript-docx.test.ts` (permitted under this project's 
 7. Update `tests/unit/providers/{assemblyai,elevenlabs,openai,google}.test.ts` with synthetic response fixtures that include the new usage/duration fields, and assert the mapped `ProviderUsage` shape. Also add one test per adapter for the "usage field absent" degradation path (openai/google only, since assemblyai/elevenlabs always have `audio_duration`/`audio_duration_secs` on a completed transcript by contract).
 
 **Exit criteria**:
-- [ ] All four adapters' existing turn-parsing tests still pass unchanged (widening must not alter turn output).
-- [ ] Each adapter returns a `usage` field matching its provider's real response, verified against one real (paid) call per provider during implementation.
-- [ ] OpenAI/Google adapters log a warning and omit `usage` (never throw, never default to zero) when the expected field is missing from a real response.
+- [x] All four adapters' existing turn-parsing tests still pass unchanged (widening must not alter turn output).
+- [ ] Each adapter returns a `usage` field matching its provider's real response, verified against one real (paid) call per provider during implementation — **partially met (AssemblyAI, Google confirmed clean; ElevenLabs suggestive but not conclusive; OpenAI blocked by account access), see implementation notes below; remainder deferred to Phase 7 per the bullet above**.
+- [x] ElevenLabs/OpenAI/Google adapters log a warning and omit `usage` (never throw, never default to zero) when the expected field is missing from a real response (reworded post-review — all three, not just two, use this pattern; AssemblyAI joined them too after the review fix pass, see implementation notes).
+
+- [ ] (deferred from Phase 5) Complete real-call verification for ElevenLabs (with the adapter's exact request shape — `diarize=true` and a `language_code`, not the simplified verification request used in Phase 5) and for OpenAI (blocked entirely by an account-level model-access limitation, not a code gap — see Risk Assessment and Follow-up Work).
+
+**Implementation (2026-09-18, code: 107e1d7 — dispatched as a [P:4] parallel group alongside Phase 4)**
+
+Added `ProviderUsage` (`{kind:'duration', seconds, modelUsed?}` / `{kind:'tokens', inputTokens, outputTokens, audioTokens?, cachedTokens?}`) to `types.ts` and `usage?: ProviderUsage` to `TranscriptChunkResult`. All four adapters populate `usage` on every return path without changing existing turn-parsing behavior (all pre-existing turn-parsing tests pass unchanged).
+
+**Real-call verification results** (user-authorized small paid calls against `tests/fixtures/10s-silence.mp3`, using this project's own stored keys, run via the same `npx electron` pattern this project's `scripts/summary-eval.cjs` already established; no key material was ever logged or written anywhere):
+- **AssemblyAI**: verified for real — `audio_duration: 10`, `speech_model_used: 'universal-3-5-pro'`, exactly matching the plan's guessed field names. Uses a `?? 0` default (no log-and-omit needed — evidence supports these fields always being present on a completed transcript).
+- **Google**: verified for real, and the plan's guessed shape (`promptTokenCount`/`candidatesTokenCount`, the older `generateContent` API's shape) was **wrong** for the `/v1beta/interactions` endpoint this adapter actually uses. The real shape is `total_input_tokens`/`total_output_tokens`/`total_cached_tokens`/`input_tokens_by_modality` (an array of `{modality, tokens}`); `audioTokens` is derived by finding the `'audio'` modality entry. Code now matches the real, confirmed shape.
+- **ElevenLabs**: one real call made, but with a simplified request (missing the adapter's own `diarize=true`/`language_code` parameters) against silent audio — returned no duration field at all. This contradicts the plan's "always present by contract" assumption, so the adapter now uses the same log-and-omit pattern as OpenAI/Google instead of a `?? 0` default. However, since the verification request didn't exactly match the adapter's real request shape, this is suggestive, not conclusive — flagged as the first deferred item above.
+- **OpenAI**: could not be verified at all. The configured key authenticates successfully, but the OpenAI project lacks plan-level access to `gpt-4o-transcribe-diarize` (`HTTP 403 model_not_found`) — an account/billing limitation, not a code defect, and one Phase 7's own end-to-end verification will hit identically. User was informed and explicitly chose to defer and continue rather than pause the plan for this. `openai.ts`'s usage parsing remains implemented from documented shape only, protected by log-and-omit (never a silent `$0`).
+
+**QA (Step 5b)**: PASS for the 3 automatable exit criteria (unit tests, log-and-omit behavior). The real-call criterion is honestly reported as partial, not silently marked complete.
+
+**Review fixes (code: c7d1add)**: two independent review personas (Domain expert, Reliability engineer) each independently found and empirically reproduced the same two real bugs. **High**: `google.ts`'s usage derivation called `.find()` on `input_tokens_by_modality` assuming it is always an array; a present-but-non-array value threw a `TypeError` with no isolating try/catch — and since `runner.ts` only saves a job's transcript once its entire per-chunk loop succeeds, this didn't just lose cost data, it failed the whole job and discarded already-fetched, already-paid-for turns from every earlier chunk. **High**: `openai.ts`/`google.ts` only checked `usage`'s parent-object truthiness, then individually `??`-defaulted its numeric sub-fields — a present-but-malformed `usage` (confirmed realistic: OpenAI's own docs show `usage` is polymorphic, discriminated by a `type` field this adapter never checked) silently produced a fully-formed-looking zero-cost record with **no log output at all**, directly violating this project's own stated "no cost, not $0" invariant. **High (after severity-floor reassessment)**: `assemblyai.ts` was the only adapter still defaulting a missing duration to `0` rather than log-and-omit, on evidence no stronger than ElevenLabs' (already downgraded in this same phase) — converted to the same pattern for all-four-adapter consistency. Also fixed: all four adapters now wrap usage-derivation in its own try/catch (the structural root cause enabling the two High bugs); added regression tests for every malformed-but-present shape that let the bugs ship green (non-array modality field, empty usage objects, a null duration value, a missing audio-modality entry); `log.warn` calls now include the filename; `types.ts`'s doc comment corrected to list all four adapters.
+
+**Open question for Phase 6, not resolved here**: does Google's `total_input_tokens` already include cached tokens (subset) or is it additive? Getting this wrong would silently double- or under-count the cached-token discount in Phase 6's cost formula, producing a wrong non-zero cost the log-and-omit safety net wouldn't catch (since a value would genuinely be present, just wrongly combined). Needs resolving against real Google billing docs or another verified call before Phase 6 finalizes its formula.
 
 ### Phase 6: Pricing calculation module + Settings Pricing UI [QA]
 
@@ -555,6 +585,8 @@ New `tests/unit/export/transcript-docx.test.ts` (permitted under this project's 
 | Removing `summary:retry-save`/`unsaved` Map changes existing IPC surface and tests | Medium — a missed call site would silently break the old retry flow | `tests/unit/summary-ipc.test.ts` is explicitly updated in Phase 8; all three real renderer-side call sites (`useSummary.ts`, `App.tsx`, `TranscriptView.tsx` — corrected from an earlier undercount that named only one) are updated in Phase 8; a repo-wide grep for `retry-save`/`canRetrySave`/`retrySave` is part of Phase 8's review to catch any remaining reference |
 | Pre-existing `_activeJobId` stuck-forever bug (`runner.ts`, `createJob()` can throw before the `try` block) | Medium if triggered, but pre-existing and out of scope | Not fixed by this plan (see Scope boundaries); the new `pricingRates` read is explicitly placed *inside* the existing `try` block (Phase 7, corrected from an earlier draft that risked placing it before the block), so it does not introduce new ways to trigger this bug |
 | New Settings Pricing UI accepts garbage input (negative/NaN rates) | Low — would silently show wrong costs | `isValidPricingRates` type guard at the IPC boundary (Phase 6); `<input type="number" min="0">` in the UI as a first line of defense |
+| User's OpenAI project lacks plan-level access to `gpt-4o-transcribe-diarize` (confirmed via a real call during Phase 5, `HTTP 403 model_not_found`) | Medium — OpenAI transcription is currently non-functional end-to-end for this user, independent of this plan's code; Phase 7's own real-call verification will hit the same wall | Not fixable from the app side (account/billing limitation); user informed and explicitly chose to defer and continue (Phase 5 review). `openai.ts`'s usage parsing is implemented from documented shape only, protected by log-and-omit so it never silently reports `$0` even though it's unverified against a real response |
+| ElevenLabs' real duration-field presence is only suggestively (not conclusively) confirmed absent — the one real verification call didn't exactly match the adapter's own request shape (`diarize`/`language_code`) | Low — the code is safe either way (log-and-omit), but the underlying assumption feeding Phase 7's cost accuracy is unconfirmed | Tracked as a deferred exit criterion (Phase 5→7); a cheap follow-up call with the exact adapter request shape would settle it before Phase 7 relies on it |
 
 ## 7) Verification
 
@@ -596,8 +628,8 @@ New `tests/unit/export/transcript-docx.test.ts` (permitted under this project's 
 | 1 | DB migration runner + schema | Done | Foundation for 7, 8. Code: d130e6a, 97bd9dd, 53d8ad2. |
 | 2 | Default page + font-size default | Done | Code: d3ae4bf, f098328, b3737cc. |
 | 3 | TranscriptView button revamp | Done | Code: 920c3a7, 9fffa7b. |
-| 4 | Shared Modal + transcription restyle | Not started | [P] with 5 |
-| 5 | Provider adapter widening | Not started | [P] with 4 |
+| 4 | Shared Modal + transcription restyle | Done | [P] with 5. Code: 7dc003a, 1f6d4d8. |
+| 5 | Provider adapter widening | Done — 1 EC deferred to 7 | [P] with 4. Code: 107e1d7, c7d1add. AssemblyAI/Google real-call confirmed; ElevenLabs/OpenAI incomplete (see deferred EC). |
 | 6 | Pricing module + Settings UI | Not started | Depends on 5's usage shape |
 | 7 | Transcription cost tracking | Not started | Depends on 1, 4, 5, 6 |
 | 8 | Summary cost + persistence + rerender + modal | Not started | Depends on 1, 4, 6 |
@@ -668,7 +700,11 @@ Phase 2, Phase 3: independent of the above, no ordering constraint (may run any 
 2. **Revisit ElevenLabs cost precision if it proves materially wrong.** ElevenLabs does not publicly document its billing rounding rule; the app's computed figure may be a small, currently-unquantifiable amount off from the real invoice. Source: Risk Assessment row 4.
 3. **Consider fixing the pre-existing `_activeJobId` stuck-forever bug** (`runner.ts`, `createJob()` can throw before the `try` block) as a separate, focused bugfix — explicitly out of scope for this plan. Source: Scope boundaries & non-goals.
 4. **Raw XML control characters (NUL, etc.) pass through unsanitized into generated docx content**, shared by both `src/main/export/transcript-docx.ts` (Phase 3) and `src/main/summary/render-docx.ts` (compte-rendu, untouched by this plan). Not observed from any real provider response; a small shared sanitization helper (strip/replace 0x00–0x08, 0x0B–0x0C, 0x0E–0x1F before any `TextRun`) applied to both renderers at once would close it. Source: Phase 3 review, Senior engineer, finding #4.
-5. **`db/jobs.ts`'s `getJob()` has the same `undefined`-vs-`null` cast bug** the Phase 1 diff fixed in its sibling `getSummaryRecord()` (better-sqlite3's `.get()` returns `undefined` on no match; `getJob` casts straight to `Job | null` with no `?? null`). Confirmed latent (all 5 call sites use truthiness, none do strict `=== null`), not currently failing, and out of Phase 1's scope since the function wasn't touched by that diff. Source: Phase 1 review, Senior engineer, finding #7.
+5. **Request OpenAI project access to `gpt-4o-transcribe-diarize`** if OpenAI transcription is wanted end-to-end — confirmed via a real Phase 5 call that the currently-configured key/project gets `HTTP 403 model_not_found`. Purely an account/billing action on the user's side, no code change. Source: Phase 5 review.
+6. **Re-verify ElevenLabs' duration-field presence with the adapter's exact real request shape** (`diarize=true`, a real `language_code`) — Phase 5's one real call used a simplified request and got no duration field, which is suggestive but not conclusive for the adapter's actual real-world requests. Source: Phase 5 review; deferred exit criterion (Phase 5→7).
+6. **Resolve whether Google's `total_input_tokens` includes or excludes cached tokens** before Phase 6 finalizes its cost formula — getting this wrong would silently double- or under-count the cached-token discount, producing a wrong non-zero cost the log-and-omit safety net can't catch (since a value is genuinely present, just wrongly combined). Source: Phase 5 review, Domain expert, finding #8.
+7. **Re-verify `Modal`'s portal/stacking-context safety under `TranscriptView`'s DOM ancestry** when Phase 8 lands — Phase 4's live CDP check only confirmed no ancestor breaks `position: fixed`-equivalent behavior under `App.tsx`'s own mount point; Phase 8 mounts the same component under a different ancestor chain that hasn't been checked. Source: Phase 4 review, Maintainability reviewer, finding #6.
+8. **`db/jobs.ts`'s `getJob()` has the same `undefined`-vs-`null` cast bug** the Phase 1 diff fixed in its sibling `getSummaryRecord()` (better-sqlite3's `.get()` returns `undefined` on no match; `getJob` casts straight to `Job | null` with no `?? null`). Confirmed latent (all 5 call sites use truthiness, none do strict `=== null`), not currently failing, and out of Phase 1's scope since the function wasn't touched by that diff. Source: Phase 1 review, Senior engineer, finding #7.
 
 ## Review Log
 
@@ -758,6 +794,45 @@ Implementation health: Green (no unresolved High or Medium findings after fixes/
 | 12 | Low | Pre-existing `shared/ipc-types.ts` type/implementation drift on `export:to-clipboard`'s response (missing `reason` field in the type) — unrelated to this diff. | Out of scope — pre-existing, unrelated; no action. |
 
 No override-discipline violations found. One divergence logged (dependency-direction reversal in the new `transcriptLines()` extraction — see Implementation Divergences), confirmed plan-compliant by review, not a defect.
+
+### 2026-09-18 -- Implementation Review (after Phase 4, persona: Maintainability reviewer)
+
+Implementation health: Green (no unresolved High or Medium findings after fixes).
+7 findings (0 High, 2 Medium, 5 Low), per the "1 qreview cycle per phase" instruction: reviewed once, fixed once, no cycle-2 re-review.
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Medium | Adjudicated the flagged spinner divergence as a real regression — it reproduces on the very next failed job, and Phase 8's needs don't excuse leaving it. | Fixed — `spinner?: boolean` prop, default `true` (code: 1f6d4d8). |
+| 2 | Medium | Backdrop blocked mouse clicks but had no keyboard focus trap — a keyboard user could `Tab` past it, directly relevant to Phase 8's SC-6 purpose. | Fixed — `Modal` now uses native `<dialog>` + `showModal()` (code: 1f6d4d8). |
+| 3 | Low | `cancelLabel`/`onCancel` model one concept as two independently-optional props — an `onCancel`-only future caller would render a blank button. | Fixed — `cancelLabel` now defaults to `'Cancel'` (code: 1f6d4d8). |
+| 4 | Low | `.modal-card`'s `text-align:center` required a compensating override on `.progress-log`, leaking the modal's layout choice into an unrelated child. | Fixed — centering scoped to `.modal-title` only (code: 1f6d4d8). |
+| 5 | Low | `aria-label={title}` duplicated the visible `.modal-title` text with no structural link between them. | Fixed — `aria-labelledby` referencing `.modal-title`'s own `id` (code: 1f6d4d8). |
+| 6 | Low | `Modal`'s portal/stacking-context safety was only verified for Phase 4's own mount point (`App.tsx`), not Phase 8's different one (`TranscriptView`). | Not this phase's defect — logged in Follow-up Work (Deferred) for Phase 8 to re-verify. |
+| 7 | Low | EC1/EC2 ("working Cancel button", "unchanged behavior") were ticked on unchanged-code inference plus static/CDP style verification, not a live click-through. | Accepted — matches this plan's own established proxy-verification precedent (Phases 2-3); stated explicitly rather than letting the tick imply full interaction testing. |
+
+No override-discipline violations found.
+
+### 2026-09-18 -- Implementation Review (after Phase 5, persona: Domain expert, Reliability engineer)
+
+Implementation health: Green (no unresolved High or Medium findings after fixes).
+12 findings after merge (0 High → 3 promoted to High and fixed, 3 Medium, 6 Low), per the "1 qreview cycle per phase" instruction: reviewed once, fixed once, no cycle-2 re-review. Both personas independently reproduced the same two core bugs empirically before fixes were applied.
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | High | `google.ts`'s `.find()` on `input_tokens_by_modality` throws if it's present but not an array — with no isolating try/catch, this fails the whole job and discards already-paid-for turns from every earlier chunk, not just cost data. Empirically reproduced by both reviewers. | Fixed — `Array.isArray` guard + wrapping try/catch on all four adapters (code: c7d1add). |
+| 2 | High | `openai.ts`/`google.ts` checked only `usage`'s parent-object truthiness, letting a malformed-but-present `usage` (confirmed realistic per OpenAI's own polymorphic, `type`-discriminated usage shape) silently fabricate a `$0` cost with zero log output — worse than a crash. Empirically reproduced by both reviewers. | Fixed — both now require the actual numeric fields via `typeof`, matching ElevenLabs' existing guard; log-and-omit otherwise (code: c7d1add). |
+| 3 | High (severity-floor reassessment) | `assemblyai.ts` was the only adapter still defaulting a missing duration to `0`, on evidence no stronger than ElevenLabs' (already downgraded in this same phase) — inconsistent, and a test codified the `0`-on-absence behavior as correct. | Fixed — converted to the same log-and-omit pattern as the other three adapters (code: c7d1add). |
+| 4 | Medium | No adapter isolated usage-derivation in its own try/catch — the structural root cause enabling findings 1-2. | Fixed — try/catch added to all four adapters (code: c7d1add). |
+| 5 | Medium | Degradation tests only simulated the usage field being completely absent, never malformed-but-present — exactly why findings 1-2 shipped inside a green suite. | Fixed — added malformed-but-present regression tests for all four adapters (code: c7d1add). |
+| 6 | Medium | OpenAI's field-name mapping remains completely unverified against a real response (account-access blocked); a passing test only proves the code matches its own guess. | Accepted — already transparently flagged in Risk Assessment/Follow-up Work; noted not to let the green suite read as validation. |
+| 7 | Low | `log.warn` calls omitted the `filename` variable already in scope, making multi-chunk failures hard to correlate. | Fixed — filename added to all usage-related `log.warn` calls (code: c7d1add). |
+| 8 | Low | Exit criterion wording credited only "OpenAI/Google" with log-and-omit, undercounting ElevenLabs (and, after fix 3, AssemblyAI). | Fixed — exit criterion reworded. |
+| 9 | Low | `types.ts`'s doc comment cross-reference was stale ("see openai.ts/google.ts"). | Fixed — now lists all four adapters (code: c7d1add). |
+| 10 | Low | No test covered Google's find-no-`'audio'`-entry path (code correctly resolves to `undefined` via optional chaining, but untested). | Fixed — added regression test (code: c7d1add). |
+| 11 | Low | No test covered ElevenLabs' guard against a JSON `null` value specifically (as opposed to plain absence). | Fixed — added regression test (code: c7d1add). |
+| 12 | Low | Open question: does Google's `total_input_tokens` include or exclude cached tokens — needed for Phase 6's cost formula. | Logged in Follow-up Work (Deferred) for Phase 6 to resolve. |
+
+No override-discipline violations found. Both reviewers independently reached the same qvalidate result (`phase-count PASS`, 2/2 ticked) and judged the deferred real-call exit criterion's partial state as honestly reported, not overclaimed.
 
 ## Harness Improvement Opportunities
 
