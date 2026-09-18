@@ -25,6 +25,7 @@ export const en = {
   summary_error_open_failed: 'The document could not be opened. It may have been moved or deleted. Saved locations are remembered only until the application closes.',
   summary_error_no_stored_summary: 'No saved compte-rendu data exists for this job yet. Generate one first.',
   summary_error_persist_failed: 'The summary arrived and the request was charged, but it could not be saved. This is a fault in the application, not the provider. Generating again will charge a new request.',
+  summary_error_rerender_failed: 'The document could not be rebuilt from the stored summary because of an unexpected local error. No request was sent to the provider and nothing was charged.',
   // Sidebar
   nav_record: 'Record',
   nav_upload: 'Upload',
@@ -203,6 +204,7 @@ export const fr: Record<I18nKey, string> = {
   summary_error_open_failed: 'Impossible d’ouvrir le document. Il a pu être déplacé ou supprimé. Les emplacements enregistrés ne sont mémorisés que jusqu’à la fermeture de l’application.',
   summary_error_no_stored_summary: 'Aucun compte rendu enregistré n’existe pour ce dossier. Générez-en un d’abord.',
   summary_error_persist_failed: 'Le compte rendu est arrivé et la requête a été facturée, mais il n’a pas pu être enregistré. L’erreur vient de l’application, pas du fournisseur. Une nouvelle génération sera de nouveau facturée.',
+  summary_error_rerender_failed: 'Le document n’a pas pu être reconstruit à partir du compte rendu enregistré, en raison d’une erreur locale inattendue. Aucune requête n’a été envoyée au fournisseur et rien n’a été facturé.',
   nav_record: 'Enregistrer',
   nav_upload: 'Transcrire',
   nav_history: 'Historique',

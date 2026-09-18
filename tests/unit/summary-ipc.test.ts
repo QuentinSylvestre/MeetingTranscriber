@@ -158,6 +158,47 @@ describe('summary export IPC', () => {
       expect(await rerender()).toEqual({ status: 'error', error: 'render_failed' });
       expect(mocks.generateSummary).not.toHaveBeenCalled();
     });
+
+    it('retries a newer, still-unsaved pendingPersist entry even when an older record already exists, instead of silently dropping it', async () => {
+      // An older generation is already durable...
+      summaryStore.set('job', { job_id: 'job', summary_json: JSON.stringify({ topics: ['old'] }), transcript_snapshot: 'old transcript', created_at: Date.now() });
+      // ...but a newer, already-paid-for generation's saveSummaryRecord failed and is
+      // still sitting in the fallback. Comparing against `!record` alone would treat
+      // the older record as "already saved" and drop this newer content unsaved.
+      pendingPersist.set('job', { summaryJson: JSON.stringify({ topics: ['new'] }), transcript: 'new transcript' });
+      expect(await rerender()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      // The newer content was actually persisted (an upsert, replacing the older
+      // record per SC-8), not merely discarded from pendingPersist.
+      expect(mocks.saveSummaryRecord).toHaveBeenCalledWith('job', JSON.stringify({ topics: ['new'] }), 'new transcript');
+      expect(mocks.renderSummaryDocx).toHaveBeenCalledWith({ topics: ['new'] }, 'new transcript');
+      expect(pendingPersist.has('job')).toBe(false);
+    });
+
+    it('reports persist_failed — not no_stored_summary — when the pendingPersist retry itself fails, and keeps the entry recoverable', async () => {
+      // Seeds the narrow session-only fallback directly, as if an earlier
+      // 'summary:generate' had already hit persist_failed for this job.
+      pendingPersist.set('job', { summaryJson: JSON.stringify({ topics: [] }), transcript: 'stored transcript' });
+      mocks.saveSummaryRecord.mockImplementationOnce(() => { throw new Error('disk still full'); });
+      // The same underlying DB issue hasn't cleared, so the retry also fails. This
+      // must not fall through to 'no_stored_summary' — the paid result is still
+      // sitting in pendingPersist, so that would misleadingly claim nothing was ever
+      // generated and could invite a needless, real, paid re-generation.
+      expect(await rerender()).toEqual({ status: 'error', error: 'persist_failed' });
+      expect(mocks.renderSummaryDocx).not.toHaveBeenCalled();
+      // Never cleared on this failure path — still recoverable on a later attempt.
+      expect(pendingPersist.get('job')).toEqual({ summaryJson: JSON.stringify({ topics: [] }), transcript: 'stored transcript' });
+    });
+
+    it('maps an unexpected local error outside the persist/render try-catches to rerender_failed, never provider_error, and still releases the busy flag', async () => {
+      // Neither of the two inner try/catches (persist-retry, render) covers a
+      // getSummaryRecord throw — it happens before either of them runs.
+      mocks.getSummaryRecord.mockImplementationOnce(() => { throw new Error('sqlite busy'); });
+      expect(await rerender()).toEqual({ status: 'error', error: 'rerender_failed' });
+      expect(mocks.renderSummaryDocx).not.toHaveBeenCalled();
+      // The busy guard must still be released so a later call proceeds normally.
+      mocks.getSummaryRecord.mockReturnValue({ job_id: 'job', summary_json: JSON.stringify({ topics: [] }), transcript_snapshot: 'snap', created_at: Date.now() });
+      expect(await rerender()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+    });
   });
 
   describe('busy guard shared between summary:generate and summary:rerender', () => {
@@ -197,6 +238,35 @@ describe('summary export IPC', () => {
       expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
       expect(pendingPersist.has('job')).toBe(false);
       expect(mocks.getSummaryRecord('job')).not.toBeNull();
+    });
+  });
+
+  describe('cost recovery when updateJobCost fails after a successful saveSummaryRecord', () => {
+    it('does not report persist_failed when only the cost write fails, and a later rerender applies the recovered cost exactly once', async () => {
+      mocks.generateSummary.mockImplementation(async (_t: string, _k: string, _d: number, opts: { onUsage?: (u: unknown) => void }) => {
+        opts.onUsage?.({ input_tokens: 1_000_000, output_tokens: 500_000, input_tokens_details: { cached_tokens: 0 } });
+        return { topics: [] };
+      });
+      mocks.updateJobCost.mockImplementationOnce(() => { throw new Error('db locked'); });
+      // The record IS saved — only the cost bookkeeping failed — so the generation
+      // must still be reported as succeeding through to the render/write step, not
+      // as persist_failed (whose text wrongly implies the record was never saved and
+      // would invite an unnecessary real re-bill).
+      expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      expect(mocks.saveSummaryRecord).toHaveBeenCalledTimes(1);
+      expect(pendingPersist.get('job')).toEqual({
+        summaryJson: JSON.stringify({ topics: [] }),
+        transcript: '[00:01:05] Alice: Correction actuelle',
+        costUsd: 14,
+      });
+
+      // A later rerender (no new provider request) recovers the stuck cost and
+      // applies it exactly once, then clears it so it can never be double-applied.
+      expect(await rerender()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
+      expect(mocks.updateJobCost).toHaveBeenCalledTimes(2);
+      expect(mocks.updateJobCost).toHaveBeenNthCalledWith(2, 'job', 14);
+      expect(pendingPersist.has('job')).toBe(false);
     });
   });
 

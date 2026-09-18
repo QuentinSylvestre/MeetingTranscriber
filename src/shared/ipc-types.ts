@@ -47,7 +47,7 @@ export interface ChunkResult {
 export type SummaryErrorCode = 'missing_key' | 'empty_transcript' | 'invalid_summary' |
   'refused' | 'incomplete' | 'timeout' | 'provider_error' | 'busy' | 'save_failed' |
   'open_failed' | 'transcript_too_long' | 'bad_extension' | 'render_failed' |
-  'persist_failed' | 'no_stored_summary';
+  'persist_failed' | 'no_stored_summary' | 'rerender_failed';
 /** Single source of truth for the summary model id: main sends it, the UI names it. */
 export const SUMMARY_MODEL = 'gpt-5.6-sol';
 export type SummaryResult = { status: 'saved'; filePath: string } | { status: 'canceled' } |
