@@ -213,7 +213,11 @@ export interface IpcChannels {
     response: { status: string; jobId: string };
   };
   // Push event (main → renderer): 'transcription:progress'
-  // Sent via mainWindow.webContents.send('transcription:progress', { jobId, status }).
+  // Sent via mainWindow.webContents.send('transcription:progress', { jobId, status, costUsd }).
+  // costUsd is present once a provider call has reported its own billing/duration data
+  // for this job; it is absent (never 0) on every progress event sent before that point,
+  // and on events (Done/Cancelled/Error:) that carry no usage of their own — consumers
+  // must keep showing the last-received value rather than treat "absent" as "zero".
 
   // Export channels (Phase 8)
   'export:to-file': {

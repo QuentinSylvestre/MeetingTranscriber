@@ -146,6 +146,8 @@ export const en = {
   progress_subtitle_processing: 'Processing your recording',
   progress_complete_msg: '✓ Transcription complete — opening transcript…',
   progress_btn_cancel: 'Cancel transcription',
+  // {{cost}} is a pre-formatted string (e.g. "$0.0006") from formatCost(), not a raw number.
+  progress_cost_so_far: 'Cost so far: ~{{cost}}',
   // ErrorBoundary
   error_heading: 'Something went wrong',
   error_body: 'An unexpected error occurred. If this keeps happening, please restart the app.',
@@ -306,6 +308,7 @@ export const fr: Record<I18nKey, string> = {
   progress_subtitle_processing: 'Traitement de votre enregistrement',
   progress_complete_msg: '✓ Transcription terminée — ouverture de la transcription…',
   progress_btn_cancel: 'Annuler la transcription',
+  progress_cost_so_far: 'Coût jusqu\'à présent : ~{{cost}}',
   error_heading: 'Une erreur est survenue',
   error_body: 'Une erreur inattendue s\'est produite. Si cela persiste, veuillez redémarrer l\'application.',
   error_btn_reload: 'Redémarrer l\'application',

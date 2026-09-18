@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useI18n } from '../hooks/useI18n';
 import Modal from '../components/Modal';
+import { formatCost } from './HistoryView';
 
 interface Props {
   jobId: string;
@@ -13,12 +14,18 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
   const [lines, setLines] = useState<string[]>(['Starting transcription…']);
   const [done, setDone] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Undefined until the first billable unit is known (no cost shown, not $0 — see
+  // shared/ipc-types.ts's transcription:progress payload doc). Once set, a later
+  // event with no costUsd of its own (Done/Cancelled/Error:) must not clear it: that
+  // is what "partial cost stays visible on failure/cancellation" means concretely.
+  const [costSoFar, setCostSoFar] = useState<number | undefined>(undefined);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (data: unknown) => {
-      const { status } = data as { jobId: string; status: string };
+      const { status, costUsd } = data as { jobId: string; status: string; costUsd?: number };
       setLines(prev => [...prev.slice(-99), status]);
+      if (costUsd !== undefined) setCostSoFar(costUsd);
       // NOTE: 'Done', 'Error:', 'Cancelled' are NOT translated — these strings are
       // pattern-matched here to drive navigation. They come from runner.ts via IPC
       // and must remain untranslated end-to-end.
@@ -59,6 +66,12 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
       {done && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)', color: 'var(--success)', fontSize: 14, fontWeight: 600 }}>
           {t('progress_complete_msg')}
+        </div>
+      )}
+
+      {costSoFar !== undefined && (
+        <div style={{ fontSize: 13, color: 'var(--overlay1)', marginBottom: 'var(--space-4)' }}>
+          {t('progress_cost_so_far').replace('{{cost}}', formatCost(costSoFar))}
         </div>
       )}
 

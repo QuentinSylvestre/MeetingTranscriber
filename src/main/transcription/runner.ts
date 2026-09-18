@@ -4,9 +4,10 @@ import log from 'electron-log';
 import { BrowserWindow } from 'electron';
 import { getProvider } from '../providers/index';
 import { chunkAudio } from '../chunker/index';
-import { createJob, updateJobStatus } from '../db/jobs';
+import { createJob, updateJobStatus, updateJobCost } from '../db/jobs';
 import { saveTranscript } from '../db/transcript';
 import { getPreference } from '../settings/store';
+import { calculateTranscriptionCost } from '../pricing/calculate';
 import type { ProviderName, TranscriptTurn, SpeakerCountHint } from '../../shared/ipc-types';
 
 /** One active job at a time. */
@@ -34,8 +35,13 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
   if (_activeJobId !== null) throw new Error(`Job ${_activeJobId} is already running`);
 
   const {
-    jobId, title, audioPath, provider, model, language, durationS, speakerCountHint,
+    jobId, title, audioPath, provider, model, language, speakerCountHint,
   } = opts;
+  // Mutable: real callers (UploadView, RecordView) never pass durationS today, so this
+  // starts undefined and is populated below from a single-shot provider's own reported
+  // duration (cr.usage.kind === 'duration') the moment it's known — fixing the
+  // previously-always-null jobs.duration_s display.
+  let durationS = opts.durationS;
 
   _activeJobId = jobId;
   _abortController = new AbortController();
@@ -62,10 +68,10 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
     chunk_count: 1,
   });
 
-  const sendProgress = (status: string) => {
+  const sendProgress = (status: string, costUsd?: number) => {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
-      win.webContents.send('transcription:progress', { jobId, status });
+      win.webContents.send('transcription:progress', { jobId, status, costUsd });
     }
   };
 
@@ -78,6 +84,7 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
     // Chunk the audio for providers that require it.
     // Chunks go under recordingsFolder/.chunks/<jobId>/ to pass path confinement check.
     const recordingsFolder = getPreference('recordingsFolder');
+    const rates = getPreference('pricingRates');
     const chunkOutputDir = path.join(recordingsFolder, '.chunks', jobId);
     const chunkResult = await chunkAudio(audioPath, provider, chunkOutputDir);
 
@@ -94,6 +101,10 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
     // Transcribe each chunk
     const allTurns: TranscriptTurn[] = [];
     const chunkDurationMs = chunkResult.chunkDurationMs;
+    // Starts undefined (not 0): a progress payload sent before any chunk carries usage
+    // must omit costUsd entirely, never send a computed $0 — see JobProgressView's
+    // "no cost shown, not $0" rule.
+    let runningCostUsd: number | undefined;
 
     // Multi-chunk jobs (openai, google) need chunk-prefixed speaker labels so
     // that Speaker 0 from chunk 0 and Speaker 0 from chunk 1 are distinct keys
@@ -133,6 +144,30 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
             original_text: turn.text,
           });
         }
+
+        // Cost/duration bookkeeping is isolated in its own try/catch, decoupled from
+        // turn-processing above: a DB error here (e.g. SQLITE_BUSY) must never discard
+        // already-fetched, already-paid-for turns or fail the whole job — cost tracking
+        // is secondary to turn-saving.
+        if (cr.usage) {
+          try {
+            const increment = calculateTranscriptionCost(provider, cr.usage, rates);
+            updateJobCost(jobId, increment);
+            runningCostUsd = (runningCostUsd ?? 0) + increment;
+            // usage.kind === 'duration' (not a provider-name check) is what excludes
+            // OpenAI/Google (always 'tokens') from ever overwriting duration_s with a
+            // partial-chunk value; durationS === undefined keeps this write-once should
+            // a single-shot provider's response ever carry more than one usage-bearing
+            // result.
+            if (cr.usage.kind === 'duration' && durationS === undefined) {
+              durationS = cr.usage.seconds;
+              updateJobStatus(jobId, 'transcribing', null, cr.usage.seconds);
+            }
+          } catch (costError) {
+            log.warn(`Job ${jobId}: cost bookkeeping failed, continuing without it: ${costError}`);
+          }
+        }
+        sendProgress('transcribing', runningCostUsd);
       }
     }
 

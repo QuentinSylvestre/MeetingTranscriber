@@ -35,6 +35,15 @@ function formatDuration(s: number | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// Exported so JobProgressView can render the identical format for its in-progress
+// running total — one formatter, not two independently-drifting copies. 4 decimal
+// places (not 2): a single short transcription's exact cost is routinely sub-cent
+// (e.g. $0.0006), and toFixed(2) would misleadingly round that to "$0.00".
+export function formatCost(usd: number): string {
+  const trimmed = usd.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return `$${trimmed}`;
+}
+
 export default function HistoryView({ onOpenJob }: HistoryViewProps): React.ReactElement {
   const { t } = useI18n();
   const { jobs, loading, error, deleteJob, renameJob } = useHistory();
@@ -145,6 +154,10 @@ export default function HistoryView({ onOpenJob }: HistoryViewProps): React.Reac
               {job.duration_s && <>
                 <span style={{ color: 'var(--surface2)' }}>·</span>
                 <span>{formatDuration(job.duration_s)}</span>
+              </>}
+              {job.cost_usd != null && <>
+                <span style={{ color: 'var(--surface2)' }}>·</span>
+                <span>{formatCost(job.cost_usd)}</span>
               </>}
               <span className={`badge ${STATUS_BADGE[job.status] ?? 'badge-neutral'}`} style={{ marginLeft: 4 }}>
                 {job.status}
