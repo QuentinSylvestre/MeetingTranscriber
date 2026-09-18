@@ -254,7 +254,7 @@ export type InvokeChannel = keyof IpcChannels;
 
 export type ProviderName = 'assemblyai' | 'elevenlabs' | 'openai' | 'google';
 
-export type PreferenceKey = 'recordingsFolder' | 'defaultLanguage' | 'defaultProvider' | 'appLanguage' | 'includeTimestamps' | 'fontSize';
+export type PreferenceKey = 'recordingsFolder' | 'defaultLanguage' | 'defaultProvider' | 'appLanguage' | 'includeTimestamps' | 'fontSize' | 'pricingRates';
 
 export interface Preferences {
   recordingsFolder: string;
@@ -263,7 +263,31 @@ export interface Preferences {
   appLanguage: 'fr' | 'en';
   includeTimestamps: boolean;
   fontSize: number;
+  pricingRates: PricingRates;
 }
+
+// Per-provider (and, for AssemblyAI, per-tier) billing rates used to compute exact
+// API cost from each provider's own inline usage/duration field. User-editable in
+// Settings — rates drift over time (promotional pricing expires, pages go stale),
+// so these live as a preference rather than a hardcoded constant.
+export interface PricingRates {
+  assemblyai: { universal35ProPerHourUsd: number; universal2PerHourUsd: number; diarizationPerHourUsd: number };
+  elevenlabs: { perHourUsd: number };
+  openaiTranscribe: { inputPerMillionUsd: number; outputPerMillionUsd: number };
+  openaiSummary: { inputPerMillionUsd: number; outputPerMillionUsd: number; cachedInputPerMillionUsd: number };
+  google: { inputPerMillionUsd: number; outputPerMillionUsd: number };
+}
+
+// Researched defaults as of 2026-09-18. Exported so store.ts's DEFAULT_PREFERENCES
+// and SettingsView.tsx's initial React state both reference this one literal —
+// never two independently-typed copies of the same numbers.
+export const DEFAULT_PRICING_RATES: PricingRates = {
+  assemblyai: { universal35ProPerHourUsd: 0.21, universal2PerHourUsd: 0.15, diarizationPerHourUsd: 0.02 },
+  elevenlabs: { perHourUsd: 0.22 },
+  openaiTranscribe: { inputPerMillionUsd: 2.50, outputPerMillionUsd: 10.00 },
+  openaiSummary: { inputPerMillionUsd: 4.00, outputPerMillionUsd: 20.00, cachedInputPerMillionUsd: 0.40 },
+  google: { inputPerMillionUsd: 2.00, outputPerMillionUsd: 12.00 },
+};
 
 export const PROVIDER_NAMES: ProviderName[] = ['assemblyai', 'elevenlabs', 'openai', 'google'];
 

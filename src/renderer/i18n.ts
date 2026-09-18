@@ -160,6 +160,19 @@ export const en = {
   settings_fontsize_large: 'Large',
   settings_fontsize_xl: 'Extra large (default)',
   settings_fontsize_xxl: 'XXL',
+  // Settings Pricing
+  settings_pricing_heading: 'Pricing',
+  settings_pricing_assemblyai_pro_label: 'AssemblyAI Universal-3.5-Pro ($/hour)',
+  settings_pricing_assemblyai_universal2_label: 'AssemblyAI Universal-2 ($/hour)',
+  settings_pricing_assemblyai_diarization_label: 'AssemblyAI diarization ($/hour)',
+  settings_pricing_elevenlabs_label: 'ElevenLabs ($/hour)',
+  settings_pricing_openai_transcribe_input_label: 'OpenAI transcription — input ($/million tokens)',
+  settings_pricing_openai_transcribe_output_label: 'OpenAI transcription — output ($/million tokens)',
+  settings_pricing_openai_summary_input_label: 'OpenAI summary — input ($/million tokens)',
+  settings_pricing_openai_summary_output_label: 'OpenAI summary — output ($/million tokens)',
+  settings_pricing_openai_summary_cached_label: 'OpenAI summary — cached input ($/million tokens)',
+  settings_pricing_google_input_label: 'Google — input ($/million tokens)',
+  settings_pricing_google_output_label: 'Google — output ($/million tokens)',
 } as const;
 
 export const fr: Record<I18nKey, string> = {
@@ -304,4 +317,16 @@ export const fr: Record<I18nKey, string> = {
   settings_fontsize_large: 'Grand',
   settings_fontsize_xl: 'Très grand (défaut)',
   settings_fontsize_xxl: 'XXL',
+  settings_pricing_heading: 'Tarification',
+  settings_pricing_assemblyai_pro_label: 'AssemblyAI Universal-3.5-Pro ($/heure)',
+  settings_pricing_assemblyai_universal2_label: 'AssemblyAI Universal-2 ($/heure)',
+  settings_pricing_assemblyai_diarization_label: 'AssemblyAI diarisation ($/heure)',
+  settings_pricing_elevenlabs_label: 'ElevenLabs ($/heure)',
+  settings_pricing_openai_transcribe_input_label: 'OpenAI transcription — entrée ($/million de jetons)',
+  settings_pricing_openai_transcribe_output_label: 'OpenAI transcription — sortie ($/million de jetons)',
+  settings_pricing_openai_summary_input_label: 'OpenAI compte-rendu — entrée ($/million de jetons)',
+  settings_pricing_openai_summary_output_label: 'OpenAI compte-rendu — sortie ($/million de jetons)',
+  settings_pricing_openai_summary_cached_label: 'OpenAI compte-rendu — entrée en cache ($/million de jetons)',
+  settings_pricing_google_input_label: 'Google — entrée ($/million de jetons)',
+  settings_pricing_google_output_label: 'Google — sortie ($/million de jetons)',
 };

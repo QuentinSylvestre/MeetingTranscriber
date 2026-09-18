@@ -1,10 +1,77 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
-import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
-import type { ProviderName } from '../../shared/ipc-types';
+import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES, DEFAULT_PRICING_RATES } from '../../shared/ipc-types';
+import type { ProviderName, PricingRates } from '../../shared/ipc-types';
+import type { I18nKey } from '../i18n';
 
 interface Status { configured: boolean; testing: boolean; result: 'idle'|'valid'|'invalid'; error?: string; }
+
+// One entry per PricingRates leaf. get/set are used instead of dynamic string-key
+// indexing so every field stays fully type-checked against PricingRates' real shape.
+interface PricingFieldSpec {
+  labelKey: I18nKey;
+  get: (r: PricingRates) => number;
+  set: (r: PricingRates, value: number) => PricingRates;
+}
+
+const PRICING_FIELDS: PricingFieldSpec[] = [
+  {
+    labelKey: 'settings_pricing_assemblyai_pro_label',
+    get: r => r.assemblyai.universal35ProPerHourUsd,
+    set: (r, v) => ({ ...r, assemblyai: { ...r.assemblyai, universal35ProPerHourUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_assemblyai_universal2_label',
+    get: r => r.assemblyai.universal2PerHourUsd,
+    set: (r, v) => ({ ...r, assemblyai: { ...r.assemblyai, universal2PerHourUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_assemblyai_diarization_label',
+    get: r => r.assemblyai.diarizationPerHourUsd,
+    set: (r, v) => ({ ...r, assemblyai: { ...r.assemblyai, diarizationPerHourUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_elevenlabs_label',
+    get: r => r.elevenlabs.perHourUsd,
+    set: (r, v) => ({ ...r, elevenlabs: { ...r.elevenlabs, perHourUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_openai_transcribe_input_label',
+    get: r => r.openaiTranscribe.inputPerMillionUsd,
+    set: (r, v) => ({ ...r, openaiTranscribe: { ...r.openaiTranscribe, inputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_openai_transcribe_output_label',
+    get: r => r.openaiTranscribe.outputPerMillionUsd,
+    set: (r, v) => ({ ...r, openaiTranscribe: { ...r.openaiTranscribe, outputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_openai_summary_input_label',
+    get: r => r.openaiSummary.inputPerMillionUsd,
+    set: (r, v) => ({ ...r, openaiSummary: { ...r.openaiSummary, inputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_openai_summary_output_label',
+    get: r => r.openaiSummary.outputPerMillionUsd,
+    set: (r, v) => ({ ...r, openaiSummary: { ...r.openaiSummary, outputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_openai_summary_cached_label',
+    get: r => r.openaiSummary.cachedInputPerMillionUsd,
+    set: (r, v) => ({ ...r, openaiSummary: { ...r.openaiSummary, cachedInputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_google_input_label',
+    get: r => r.google.inputPerMillionUsd,
+    set: (r, v) => ({ ...r, google: { ...r.google, inputPerMillionUsd: v } }),
+  },
+  {
+    labelKey: 'settings_pricing_google_output_label',
+    get: r => r.google.outputPerMillionUsd,
+    set: (r, v) => ({ ...r, google: { ...r.google, outputPerMillionUsd: v } }),
+  },
+];
 
 export default function SettingsView(): React.ReactElement {
   const { t, setLang } = useI18n();
@@ -24,6 +91,7 @@ export default function SettingsView(): React.ReactElement {
   const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
   const [fontSize, setFontSize] = useState<number | null>(null);
+  const [pricingRates, setPricingRatesState] = useState<PricingRates | null>(null);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -49,7 +117,8 @@ export default function SettingsView(): React.ReactElement {
       getPreference('appLanguage'),
       getPreference('includeTimestamps'),
       getPreference('fontSize'),
-    ]).then(([prov, lang, appLang, ts, fSize]) => {
+      getPreference('pricingRates'),
+    ]).then(([prov, lang, appLang, ts, fSize, rates]) => {
       // Cast via ProviderName check
       const provVal = (PROVIDER_NAMES.includes(prov as ProviderName) ? prov : 'assemblyai') as ProviderName;
       // Treat 'auto' as 'fr'
@@ -57,11 +126,13 @@ export default function SettingsView(): React.ReactElement {
       const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
       const tsVal = typeof ts === 'boolean' ? ts : true;
       const sizeVal = [14, 16, 18, 20].includes(fSize as number) ? (fSize as number) : 18;
+      const ratesVal = (rates && typeof rates === 'object') ? rates as PricingRates : DEFAULT_PRICING_RATES;
       setDefaultProvider(provVal);
       setDefaultLanguage(langVal);
       setAppLanguage(appLangVal);
       setIncludeTimestamps(tsVal);
       setFontSize(sizeVal);
+      setPricingRatesState(ratesVal);
       document.documentElement.style.setProperty('--font-size-base', `${sizeVal}px`);
       document.documentElement.style.setProperty('--font-size-ui', `${sizeVal - 1}px`);
       setPrefsLoaded(true);
@@ -128,6 +199,22 @@ export default function SettingsView(): React.ReactElement {
       document.documentElement.style.setProperty('--font-size-base', `${v}px`);
       document.documentElement.style.setProperty('--font-size-ui', `${v - 1}px`);
     } catch (e) { console.error('Failed to save fontSize preference', e); }
+  };
+
+  // Local edits update React state immediately (so the input reflects keystrokes);
+  // the whole pricingRates object is persisted as one IPC round-trip on blur, not
+  // per-keystroke and not one call per leaf field.
+  const handlePricingFieldChange = (spec: PricingFieldSpec, raw: string) => {
+    const value = raw === '' ? 0 : Number(raw);
+    if (Number.isNaN(value)) return;
+    setPricingRatesState(prev => spec.set(prev ?? DEFAULT_PRICING_RATES, value));
+  };
+
+  const handlePricingBlur = async () => {
+    if (!pricingRates) return;
+    try {
+      await setPreference('pricingRates', pricingRates);
+    } catch (e) { console.error('Failed to save pricingRates preference', e); }
   };
 
   return (
@@ -228,6 +315,31 @@ export default function SettingsView(): React.ReactElement {
               <option value={18}>{t('settings_fontsize_xl')}</option>
               <option value={20}>{t('settings_fontsize_xxl')}</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Pricing card */}
+      <div className="card" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <div className="card-body">
+          <h3 style={{ marginBottom: 'var(--space-4)' }}>{t('settings_pricing_heading')}</h3>
+          <div className="grid-2">
+            {PRICING_FIELDS.map(spec => (
+              <div className="form-group" key={spec.labelKey}>
+                <label className="form-label" htmlFor={`pricing-${spec.labelKey}`}>{t(spec.labelKey)}</label>
+                <input
+                  id={`pricing-${spec.labelKey}`}
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingRates ? spec.get(pricingRates) : ''}
+                  onChange={e => handlePricingFieldChange(spec, e.target.value)}
+                  onBlur={() => void handlePricingBlur()}
+                  disabled={!prefsLoaded}
+                />
+              </div>
+            ))}
           </div>
         </div>
       </div>

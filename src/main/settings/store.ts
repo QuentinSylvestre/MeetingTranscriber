@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import log from 'electron-log';
 import type { Preferences, PreferenceKey, ProviderName } from '../../shared/ipc-types';
-import { SECRET_KEY_NAMES } from '../../shared/ipc-types';
+import { SECRET_KEY_NAMES, DEFAULT_PRICING_RATES } from '../../shared/ipc-types';
 
 // Warning: DEFAULT_PREFERENCES references app.getPath() at module initialization time.
 // This module must not be imported before app.whenReady() has been called.
@@ -15,6 +15,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   appLanguage: 'fr',
   includeTimestamps: true,
   fontSize: 18, // default; UI options defined in Phase 3 (SettingsView font size select)
+  pricingRates: DEFAULT_PRICING_RATES,
 };
 
 function getSecretsPath(): string {
