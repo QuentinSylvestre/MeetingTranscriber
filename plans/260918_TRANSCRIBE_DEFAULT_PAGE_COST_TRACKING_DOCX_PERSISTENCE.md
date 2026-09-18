@@ -233,10 +233,22 @@ Follow-up fix (code: 53d8ad2, user-approved during review): `app.requestSingleIn
 5. `i18n.ts:159,303` (`settings_fontsize_medium`): drop the `' (default)'`/`' (défaut)'` suffix, leaving plain `'Medium'`/`'Moyenne'`. `i18n.ts:161,305` (`settings_fontsize_xl`): add the suffix, becoming `'Extra large (default)'`/`'Très grand (défaut)'`.
 
 **Exit criteria**:
-- [ ] Fresh app launch (no existing `preferences.json`) opens on the Transcrire/Upload page.
-- [ ] Sidebar shows "Transcrire" in French, "Upload" in English.
-- [ ] A fresh install's default text size renders at 18px (`--font-size-base`); Settings shows "Très grand (défaut)" selected.
-- [ ] An existing `preferences.json` with no `fontSize` key (or a corrupted one) still resolves to 18px, not 14px.
+- [x] Fresh app launch (no existing `preferences.json`) opens on the Transcrire/Upload page.
+- [x] Sidebar shows "Transcrire" in French, "Upload" in English.
+- [x] A fresh install's default text size renders at 18px (`--font-size-base`); Settings shows "Très grand (défaut)" selected.
+- [x] An existing `preferences.json` with no `fontSize` key (or a corrupted one) still resolves to 18px, not 14px.
+
+**Implementation (2026-09-18, code: d3ae4bf, fixes: pending)**
+
+`App.tsx`'s default view changed from `'record'` to `'upload'`; French `nav_upload` renamed to "Transcrire" (English and `UploadView`'s own text unchanged); `store.ts`'s `DEFAULT_PREFERENCES.fontSize` raised from 14 to 18; all three `[14,16,18,20].includes(value) ? value : 14` fallback sites (`App.tsx`'s font-size effect, `SettingsView.tsx`'s pre-load `useState` initial value, and its post-load clamp) updated to fall back to 18, per Changes item 4; the "(défaut)"/"(default)" label suffix moved from the Medium option to the Extra large option in both locales. `tests/unit/settings.test.ts`'s "preferences default schema applied when file missing" test updated from asserting `fontSize===14` to `18`, a mechanical consequence of the default change (confirmed by review as squarely within Doc & Test Guidelines' "update existing tests when implementation changes," not scope creep).
+
+Verified live over the CDP-based QA technique (from Phase 1's Harness Improvement Opportunities note): the running app opened directly on the Upload page with the sidebar correctly showing "Transcrire". The "fresh install resolves to 18" exit criteria were verified via the updated `settings.test.ts` assertion plus a standalone script reproducing `readPreferences()`'s merge logic and the clamp expression against four synthetic scenarios (no file, missing key, corrupted value, unparseable JSON) — the live CDP check itself ran against this machine's real, pre-existing `preferences.json` (which has an explicit, real, saved `fontSize:14`), so it could only confirm labels render correctly and a real stored value isn't silently overridden, not the fresh-install path itself (deliberately not simulated by touching real user data). Review judged this evidentiary chain sound and proportionate for this phase's risk level, given `readPreferences()`'s fresh-install path is a simple, deterministic object spread with no branching.
+
+**QA (Step 5b)**: PASS (live CDP verification of the default-view/sidebar change; static + test verification for the preference-default paths, judged sufficient by review). Dev instance confirmed fully torn down afterward (no stray `electron.exe`/`node.exe` for this project).
+
+**Review finding, fixed**: the review found a fourth hardcoded font-size default the plan's own "must be updated in lockstep" analysis and this phase's Changes list both missed — `global.css`'s `:root` block still declared `--font-size-base: 14px`/`--font-size-ui: 13px`. Before this phase, the CSS default and the JS default coincided (both 14), so the gap was invisible; after raising the JS default to 18 without updating CSS, every app launch briefly painted the whole UI at the old 14px before the `App.tsx` effect corrected it via `setProperty` (the window has no `ready-to-show` gate). Fixed by updating the CSS tokens to 18px/17px, restoring the single-source-of-truth invariant.
+
+**Review finding, fixed (user chose "fix it" over documenting the trade-off)**: `SettingsView.tsx`'s pre-load `useState<number>(18)` initial value (previously `14`) meant a user who has explicitly saved a real, non-default value (e.g. 14) would see the font-size `<select>` briefly show "Très grand (défaut)" before the load effect corrects it — a flash in the opposite direction from the one this change was meant to prevent. Fixed (code: b3737cc) by changing `fontSize`'s pre-load state to `null` (`useState<number | null>(null)`) and the select's bound `value` to `fontSize ?? ''`, so the already-`disabled={!prefsLoaded}` control shows no guessed value in either direction until the real preference loads.
 
 ### Phase 3: TranscriptView button revamp — Reset placement, docx export, Copy rename [QA]
 
@@ -564,7 +576,7 @@ Follow-up fix (code: 53d8ad2, user-approved during review): `app.requestSingleIn
 | # | Phase/Task | Status | Notes |
 |---|---|---|---|
 | 1 | DB migration runner + schema | Done | Foundation for 7, 8. Code: d130e6a, 97bd9dd, 53d8ad2. |
-| 2 | Default page + font-size default | Not started | |
+| 2 | Default page + font-size default | Done | Code: d3ae4bf, f098328, b3737cc. |
 | 3 | TranscriptView button revamp | Not started | |
 | 4 | Shared Modal + transcription restyle | Not started | [P] with 5 |
 | 5 | Provider adapter widening | Not started | [P] with 4 |
@@ -692,8 +704,23 @@ Implementation health: Green (no unresolved High or Medium findings after the au
 
 Two divergences from the plan's literal text (backup-gate signal, `createJob` parameter narrowing — see Implementation Divergences) were verified sound by both review personas independently before being accepted as-is. No override-discipline violations found in the plan's existing Review Log.
 
+### 2026-09-18 -- Implementation Review (after Phase 2, persona: Senior engineer)
+
+Implementation health: Green (no unresolved High or Medium findings after the auto-fix).
+4 findings (0 High, 1 Medium, 3 Low), per the "1 qreview cycle per phase" instruction: reviewed once, auto-fixed once, no cycle-2 re-review.
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Medium | `global.css`'s `:root` block still hardcoded the old font-size default (`--font-size-base:14px`/`--font-size-ui:13px`), a fourth lockstep site the plan's own Current State analysis and this phase's Changes list both missed — every launch now briefly flashed the old size before JS corrected it. | Fixed — updated to 18px/17px, restoring the single-source-of-truth invariant (code: f098328). |
+| 2 | Low | `SettingsView.tsx`'s pre-load `useState` initial value (now 18) causes a brief opposite-direction flash for a user with a real, saved, non-default value (e.g. 14). | User: accepted a code fix over documenting the trade-off — user chose "Fix it" when presented with both options; fontSize's pre-load state changed to `null` so the disabled select shows no guessed value in either direction until the real preference loads. |
+| 3 | Low | Phase 2's implementation/QA narrative and Progress Tracker row weren't yet committed to the plan at review time. | Fixed — this Step 7 update. |
+| 4 | Low | Exit criterion 3's "fresh install" claim was verified via test/script proxy, not a genuine fresh-profile live launch (the real machine's saved `preferences.json` was deliberately not touched to simulate one). | User: accepted the test/script proxy as sufficient for this phase's risk level, when presented with the alternative (scratch `--user-data-dir` launch); logged as a Harness Improvement Opportunity for future phases needing a genuine fresh-profile live check. |
+
+No override-discipline violations found.
+
 ## Harness Improvement Opportunities
 
 - User invoked `/qdev` with "1 qreview cycle per phase" — overrides `/qdev` Step 6's default (dispatch review, classify findings, auto-fix, then a mandatory cycle-2 re-review before commit, up to 2 cycles). Applied override: dispatch review once per phase, classify auto-fix vs. escalate, apply auto-fixes via re-spawn, log `Fixed —` in the review log, and stop — no cycle-2 re-review verifying the fixes landed cleanly. Cost of the override: auto-fixes are unverified by a second review pass (a fix could itself introduce a regression that ships uncaught until Step 9's holistic review). Step 8 auto-continue gating is unaffected. — cost: per-phase fixes go unverified by a second review pass until Step 9's holistic review — suggested change: consider a lighter "cycle-2 diff-only" check (re-review only the fix's diff, not the whole phase) as a middle ground between 1 and 2 full cycles.
 - This project's `#1 Non-goals` bullet assumed the new `Modal` component would be "verified through /qdev's browser-driven QA step... consistent with how existing renderer views are verified" — but this is an Electron app, and claude-in-chrome only drives Chrome browser tabs, not Electron `BrowserWindow`s, so that assumption was untested at plan-writing time. Discovered and resolved during `/qdev` Step 1: `vite-plugin-electron`'s dev-mode `startup()` helper already honors a `REMOTE_DEBUGGING_PORT` env var and forwards it to Electron as `--remote-debugging-port`, exposing the live renderer over the Chrome DevTools Protocol; a small dependency-free Node script (Node 24 ships a global `WebSocket` client) drives it directly via `Runtime.evaluate`, without Playwright/Puppeteer and without any code or config change to the app itself. — cost: ~20 minutes of investigation before Phase 1 could start (would recur on every Electron-app plan without this note) — suggested change: record "Electron app + no code-review-only QA fallback wanted" as a documented pattern (e.g. a topic memory or a `/qqa` note) pointing at the `REMOTE_DEBUGGING_PORT` + raw-CDP-`Runtime.evaluate` technique, so future Electron plans don't re-derive it from scratch.
+- Phase 2's "fresh install" exit criterion (default preference value on first launch) was verified via an updated unit test plus a standalone script reproducing the exact merge/clamp logic, not a genuine fresh-profile live app launch — deliberately, to avoid touching this machine's real `preferences.json`. User accepted this as sufficient for a Low-risk, literal-value phase. — cost: none this time (accepted), but a future phase whose exit criteria specifically require observing "fresh install" behavior live would need a real solution — suggested change: use a scratch `--user-data-dir`-equivalent (Electron's `app.getPath('userData')` override, or a temporary `APPDATA` redirect) as the default method for verifying fresh-install behavior live, rather than relying on a test/script proxy or risking the real profile.
 - Editing `src/main/**` while a `npm run dev` instance is running against this project executes new main-process code (including DB migrations) against the live userData database via Vite's main-process auto-restart, with no warning — the orchestrator's own imperfectly-terminated background dev instance auto-restarted mid-Phase-1-implementation and ran a real, untested migration against production data (harmless here because the migration was additive and self-backing-up, but would not be in general). — cost: an unauthorized live migration ran mid-task, requiring an out-of-band read-only re-verification of real user data to confirm no harm — suggested change: before an orchestrator starts a background `npm run dev` (or similar file-watching dev server) for an Electron/main-process app, confirm no prior instance survived a previous stop, and confirm it's fully stopped (not just its shell wrapper) before dispatching implementation sub-agents that touch `src/main/**`.
