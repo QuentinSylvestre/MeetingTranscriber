@@ -40,8 +40,19 @@ function formatDuration(s: number | null): string {
 // places (not 2): a single short transcription's exact cost is routinely sub-cent
 // (e.g. $0.0006), and toFixed(2) would misleadingly round that to "$0.00".
 export function formatCost(usd: number): string {
+  // A real, known, nonzero cost must never render as a bare "$0" — that is
+  // indistinguishable from "no cost known" and from a genuine $0 rate, which
+  // directly contradicts this whole feature's "no cost shown, not $0" principle.
+  // A real short recording can cost less than the display's own precision floor
+  // (< $0.0001), which toFixed(4) would round to "0.0000" and the trim below
+  // would then collapse to a bare "0" — so that case gets its own explicit,
+  // still-honest sentinel instead.
+  if (usd > 0 && usd < 0.0001) return '<$0.0001';
   const trimmed = usd.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-  return `$${trimmed}`;
+  // Defensive fallback: a genuine usd === 0 (a real user-configured $0 rate)
+  // correctly trims to "0" and renders "$0" below — this only overrides the
+  // trim for a nonzero value that somehow still reached it.
+  return `$${trimmed === '0' && usd > 0 ? usd.toFixed(4) : trimmed}`;
 }
 
 export default function HistoryView({ onOpenJob }: HistoryViewProps): React.ReactElement {

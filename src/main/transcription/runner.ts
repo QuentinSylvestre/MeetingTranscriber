@@ -145,29 +145,57 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
           });
         }
 
-        // Cost/duration bookkeeping is isolated in its own try/catch, decoupled from
-        // turn-processing above: a DB error here (e.g. SQLITE_BUSY) must never discard
-        // already-fetched, already-paid-for turns or fail the whole job — cost tracking
-        // is secondary to turn-saving.
+        // Cost/duration bookkeeping is isolated from turn-processing above: a DB
+        // error here (e.g. SQLITE_BUSY) must never discard already-fetched,
+        // already-paid-for turns or fail the whole job — cost tracking is
+        // secondary to turn-saving. Split into two independent blocks (rather
+        // than one shared try/catch) so a DB failure in either one can never
+        // suppress the other's work.
+        //
+        // usage.kind === 'duration' (not a provider-name check) is what excludes
+        // OpenAI/Google (always 'tokens') from ever overwriting duration_s with a
+        // partial-chunk value; durationS === undefined keeps this write-once should
+        // a single-shot provider's response ever carry more than one usage-bearing
+        // result. This only correctly reflects the *total* job duration because
+        // today's duration-billed providers (AssemblyAI, ElevenLabs) never produce
+        // more than one chunk; if a duration-billed provider is ever chunked in the
+        // future, this would need to sum across chunks instead of recording only
+        // the first chunk's seconds.
+        if (cr.usage?.kind === 'duration' && durationS === undefined) {
+          // Plain, synchronous, DB-independent assignment — captured before the
+          // DB write below (and before the separate cost-bookkeeping block) so a
+          // failure in either DB write can never also silently discard this.
+          durationS = cr.usage.seconds;
+          try {
+            updateJobStatus(jobId, 'transcribing', null, durationS);
+          } catch (durationError) {
+            log.warn(`Job ${jobId}: chunk ${i} duration write failed, continuing without it: ${durationError}`);
+          }
+        }
+
         if (cr.usage) {
           try {
             const increment = calculateTranscriptionCost(provider, cr.usage, rates);
-            updateJobCost(jobId, increment);
-            runningCostUsd = (runningCostUsd ?? 0) + increment;
-            // usage.kind === 'duration' (not a provider-name check) is what excludes
-            // OpenAI/Google (always 'tokens') from ever overwriting duration_s with a
-            // partial-chunk value; durationS === undefined keeps this write-once should
-            // a single-shot provider's response ever carry more than one usage-bearing
-            // result.
-            if (cr.usage.kind === 'duration' && durationS === undefined) {
-              durationS = cr.usage.seconds;
-              updateJobStatus(jobId, 'transcribing', null, cr.usage.seconds);
+            if (increment === null) {
+              // A kind mismatch: the provider's response didn't carry the field
+              // this provider bills on. Cost is genuinely unknown here — never
+              // fall back to a fabricated 0, and never touch cost_usd/runningCostUsd.
+              log.warn(`Job ${jobId}: chunk ${i} usage.kind ('${cr.usage.kind}') doesn't match what ${provider} bills on — cost unknown, skipping cost update`);
+            } else {
+              updateJobCost(jobId, increment);
+              runningCostUsd = (runningCostUsd ?? 0) + increment;
             }
           } catch (costError) {
-            log.warn(`Job ${jobId}: cost bookkeeping failed, continuing without it: ${costError}`);
+            log.warn(`Job ${jobId}: chunk ${i} cost bookkeeping failed, continuing without it: ${costError}`);
           }
         }
-        sendProgress('transcribing', runningCostUsd);
+        // Renamed from the bare status string 'transcribing' (Phase 7 review, Fix
+        // 7a): that literal fed the same array JobProgressView renders as a visible
+        // scrolling log, appearing as a stray, non-descriptive lowercase line. True
+        // suppression would require JobProgressView.tsx to stop pushing every
+        // received status onto its log (out of this fix's file scope) — this at
+        // least makes the line meaningful when it does appear.
+        sendProgress(`Chunk ${i + 1} of ${chunkResult.paths.length} complete`, runningCostUsd);
       }
     }
 

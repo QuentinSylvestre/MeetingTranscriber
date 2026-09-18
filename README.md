@@ -34,6 +34,7 @@ The app supports four transcription providers. You need an API key for at least 
    - **Google Gemini 3.5 Transcribe** (preview API) — Sign up at [aistudio.google.com](https://aistudio.google.com). 30-minute limit per chunk with diarization.
 3. Click **Test** to verify your API key works.
 4. API keys are stored encrypted using Windows Credential Manager (DPAPI).
+5. **Settings → Pricing** shows the default per-provider billing rate (editable) used to estimate transcription cost. Once a job completes, its estimated cost appears in the transcription progress dialog and alongside it in **History**; no figure is shown when the provider's response doesn't include the billing data needed to compute one.
 
 ## Recording Folder
 

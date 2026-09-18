@@ -24,9 +24,11 @@ describe('calculateTranscriptionCost', () => {
     expect(calculateTranscriptionCost('assemblyai', usage, rates)).toBeCloseTo(0.17, 10);
   });
 
-  it('AssemblyAI with a usage.kind mismatch (tokens instead of duration) returns 0', () => {
+  it('AssemblyAI with a usage.kind mismatch (tokens instead of duration) returns null, not 0', () => {
     const usage: ProviderUsage = { kind: 'tokens', inputTokens: 100, outputTokens: 50 };
-    expect(calculateTranscriptionCost('assemblyai', usage, rates)).toBe(0);
+    const cost = calculateTranscriptionCost('assemblyai', usage, rates);
+    expect(cost).toBeNull();
+    expect(cost).not.toBe(0);
   });
 
   it('ElevenLabs — hand-computed', () => {
@@ -35,10 +37,11 @@ describe('calculateTranscriptionCost', () => {
     expect(calculateTranscriptionCost('elevenlabs', usage, rates)).toBeCloseTo(0.11, 10);
   });
 
-  it('ElevenLabs with a usage.kind mismatch (tokens) returns 0, not NaN', () => {
+  it('ElevenLabs with a usage.kind mismatch (tokens) returns null, not NaN or 0', () => {
     const usage: ProviderUsage = { kind: 'tokens', inputTokens: 100, outputTokens: 50 };
     const cost = calculateTranscriptionCost('elevenlabs', usage, rates);
-    expect(cost).toBe(0);
+    expect(cost).toBeNull();
+    expect(cost).not.toBe(0);
     expect(Number.isNaN(cost)).toBe(false);
   });
 
@@ -48,11 +51,12 @@ describe('calculateTranscriptionCost', () => {
     expect(calculateTranscriptionCost('openai', usage, rates)).toBeCloseTo(7.5, 10);
   });
 
-  it('OpenAI with a usage.kind mismatch (duration) returns 0, not NaN or a throw', () => {
+  it('OpenAI with a usage.kind mismatch (duration) returns null, not NaN, 0, or a throw', () => {
     const usage: ProviderUsage = { kind: 'duration', seconds: 100 };
     expect(() => calculateTranscriptionCost('openai', usage, rates)).not.toThrow();
     const cost = calculateTranscriptionCost('openai', usage, rates);
-    expect(cost).toBe(0);
+    expect(cost).toBeNull();
+    expect(cost).not.toBe(0);
     expect(Number.isNaN(cost)).toBe(false);
   });
 
@@ -62,11 +66,12 @@ describe('calculateTranscriptionCost', () => {
     expect(calculateTranscriptionCost('google', usage, rates)).toBeCloseTo(16.0, 10);
   });
 
-  it('Google with a usage.kind mismatch (duration usage passed to a token-based provider) returns 0, not NaN or a throw', () => {
+  it('Google with a usage.kind mismatch (duration usage passed to a token-based provider) returns null, not NaN, 0, or a throw', () => {
     const usage: ProviderUsage = { kind: 'duration', seconds: 100 };
     expect(() => calculateTranscriptionCost('google', usage, rates)).not.toThrow();
     const cost = calculateTranscriptionCost('google', usage, rates);
-    expect(cost).toBe(0);
+    expect(cost).toBeNull();
+    expect(cost).not.toBe(0);
     expect(Number.isNaN(cost)).toBe(false);
   });
 });

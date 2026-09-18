@@ -298,8 +298,23 @@ describe('runner cost/duration bookkeeping', () => {
     // The job completes normally despite the cost-write failure.
     expect(vi.mocked(updateJobStatus).mock.calls.at(-1)?.[1]).toBe('done');
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('cost bookkeeping failed'));
+    // Fix 2 gap-closer: durationS is a pure, synchronous local assignment that
+    // happens independently of updateJobCost's DB write. Before the fix, it was
+    // captured in the same try block AFTER updateJobCost, so updateJobCost's throw
+    // here would have skipped it, and this final 'done' write would have carried
+    // duration_s as undefined (permanently NULL in the DB) despite the real
+    // duration being known. It must now be present.
+    expect(vi.mocked(updateJobStatus).mock.calls.at(-1)).toEqual(['test-cost-throw', 'done', null, 3600]);
   });
 
+  // Fix 5 (Phase 7 review): this test covers ONE specific cancellation shape —
+  // the `signal.aborted`-observed-at-top-of-loop path, where the mocked
+  // transcribeFile calls cancelJob() but still resolves cleanly, so the abort is
+  // only noticed when the loop re-checks `signal.aborted` at the top of the next
+  // iteration. It does NOT model how cancellation generally works: all four real
+  // provider adapters pass the abort signal into fetch/their poll loop, so a real
+  // cancel mid-request typically REJECTS with an AbortError instead of resolving —
+  // see the companion test below for that shape.
   it('keeps chunk-0 cost recorded when a multi-chunk job is cancelled before chunk 1', async () => {
     const { chunkAudio } = await import('../../src/main/chunker/index');
     const { getProvider } = await import('../../src/main/providers/index');
@@ -349,6 +364,54 @@ describe('runner cost/duration bookkeeping', () => {
     expect(payloads.at(-1)).toEqual({ jobId: 'test-cost-cancel', status: 'Cancelled', costUsd: undefined });
   });
 
+  it('routes a real-adapter-style rejected cancel (AbortError) through the failure path, keeping prior chunks\u2019 cost', async () => {
+    const { chunkAudio } = await import('../../src/main/chunker/index');
+    const { getProvider } = await import('../../src/main/providers/index');
+    const { updateJobCost, updateJobStatus } = await import('../../src/main/db/jobs');
+    const runnerModule = await import('../../src/main/transcription/runner');
+
+    vi.mocked(chunkAudio).mockResolvedValue({
+      paths: ['chunk_000.mp3', 'chunk_001.mp3'],
+      chunkDurationMs: 1000 * 1000,
+    });
+
+    const mockAdapter = {
+      name: 'google',
+      transcribeFile: vi.fn()
+        .mockImplementationOnce(() => Promise.resolve([
+          { chunkIndex: 0, turns: [{ speakerLabel: 'Speaker 0', startMs: 0, endMs: 1000, text: 'Hello' }],
+            usage: { kind: 'tokens', inputTokens: 1_000_000, outputTokens: 200_000 } },
+        ]))
+        .mockImplementationOnce(() => {
+          // All four real adapters pass the abort signal into fetch/their poll
+          // loop, so a real cancel mid-request REJECTS rather than resolving —
+          // this models chunk 1's in-flight request being aborted mid-fetch.
+          runnerModule.cancelJob();
+          return Promise.reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        }),
+    };
+    vi.mocked(getProvider).mockReturnValue(mockAdapter as ReturnType<typeof getProvider>);
+
+    await expect(runnerModule.startJob({
+      jobId: 'test-cost-cancel-reject',
+      title: 'Test Cost Cancel Reject',
+      audioPath: 'C:/Users/test/Documents/MeetingTranscriber/test.mp3',
+      provider: 'google',
+      model: 'default',
+      language: 'fr',
+    })).rejects.toThrow();
+
+    // Chunk 0's cost was already recorded before chunk 1's request rejected.
+    expect(vi.mocked(updateJobCost).mock.calls).toEqual([['test-cost-cancel-reject', 4.4]]);
+    // The rejection is caught by startJob's outer catch (not the clean
+    // signal.aborted branch), so the job ends 'failed'. Note (pre-existing,
+    // out-of-scope-for-this-fix behavior): the outer catch surfaces the raw
+    // AbortError text as a generic failure rather than recognizing it as a
+    // user-initiated cancellation, so a real mid-fetch cancel is shown to the
+    // user as an error rather than as "Cancelled by user".
+    expect(vi.mocked(updateJobStatus).mock.calls.at(-1)?.[1]).toBe('failed');
+  });
+
   it('shows no cost anywhere when the job fails before any chunk completes', async () => {
     const { chunkAudio } = await import('../../src/main/chunker/index');
     const { getProvider } = await import('../../src/main/providers/index');
@@ -377,6 +440,86 @@ describe('runner cost/duration bookkeeping', () => {
 
     expect(updateJobCost).not.toHaveBeenCalled();
     const payloads = await getProgressPayloads();
+    expect(payloads.every(p => p.costUsd === undefined)).toBe(true);
+  });
+
+  it('Fix 1/4a: logs a warning and skips the cost update when usage.kind mismatches the provider (calculateTranscriptionCost returns null)', async () => {
+    const { chunkAudio } = await import('../../src/main/chunker/index');
+    const { getProvider } = await import('../../src/main/providers/index');
+    const { updateJobCost } = await import('../../src/main/db/jobs');
+    const log = (await import('electron-log')).default;
+
+    vi.mocked(chunkAudio).mockResolvedValue({
+      paths: ['C:/Users/test/Documents/MeetingTranscriber/test.mp3'],
+      chunkDurationMs: Infinity,
+    });
+
+    const mockAdapter = {
+      name: 'assemblyai',
+      transcribeFile: vi.fn().mockResolvedValue([
+        // AssemblyAI bills on 'duration'; a 'tokens' usage here is a kind
+        // mismatch — calculateTranscriptionCost must return null (Fix 1), never
+        // a fabricated 0.
+        { chunkIndex: 0, turns: [{ speakerLabel: 'Speaker A', startMs: 0, endMs: 1000, text: 'Hi' }],
+          usage: { kind: 'tokens', inputTokens: 100, outputTokens: 50 } },
+      ]),
+    };
+    vi.mocked(getProvider).mockReturnValue(mockAdapter as ReturnType<typeof getProvider>);
+
+    const { startJob } = await import('../../src/main/transcription/runner');
+    await startJob({
+      jobId: 'test-cost-null-mismatch',
+      title: 'Test Cost Mismatch',
+      audioPath: 'C:/Users/test/Documents/MeetingTranscriber/test.mp3',
+      provider: 'assemblyai',
+      model: 'universal',
+      language: 'fr',
+    });
+
+    // Never fall back to a fabricated 0 cost on a kind mismatch.
+    expect(updateJobCost).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('chunk 0'));
+
+    const payloads = await getProgressPayloads();
+    // No chunk ever produced a known cost, so every payload (including this
+    // chunk's own sendProgress call) must omit costUsd entirely — never 0.
+    expect(payloads.every(p => p.costUsd === undefined)).toBe(true);
+  });
+
+  it("Fix 4b: keeps costUsd undefined for a chunk with no usage data at all (ElevenLabs' real, already-observed behavior)", async () => {
+    const { chunkAudio } = await import('../../src/main/chunker/index');
+    const { getProvider } = await import('../../src/main/providers/index');
+    const { updateJobCost } = await import('../../src/main/db/jobs');
+
+    vi.mocked(chunkAudio).mockResolvedValue({
+      paths: ['C:/Users/test/Documents/MeetingTranscriber/test.mp3'],
+      chunkDurationMs: Infinity,
+    });
+
+    const mockAdapter = {
+      name: 'elevenlabs',
+      transcribeFile: vi.fn().mockResolvedValue([
+        // usage entirely absent — ElevenLabs' real API response doesn't
+        // reliably include audio_duration_secs.
+        { chunkIndex: 0, turns: [{ speakerLabel: 'Speaker A', startMs: 0, endMs: 1000, text: 'Hi' }] },
+      ]),
+    };
+    vi.mocked(getProvider).mockReturnValue(mockAdapter as ReturnType<typeof getProvider>);
+
+    const { startJob } = await import('../../src/main/transcription/runner');
+    await startJob({
+      jobId: 'test-cost-no-usage',
+      title: 'Test No Usage',
+      audioPath: 'C:/Users/test/Documents/MeetingTranscriber/test.mp3',
+      provider: 'elevenlabs',
+      model: 'scribe_v2',
+      language: 'fr',
+    });
+
+    expect(updateJobCost).not.toHaveBeenCalled();
+    const payloads = await getProgressPayloads();
+    // runningCostUsd is still unset (no prior chunk set it) — the payload must
+    // start at undefined, never a computed 0.
     expect(payloads.every(p => p.costUsd === undefined)).toBe(true);
   });
 });
