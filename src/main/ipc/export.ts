@@ -5,23 +5,14 @@ import { getTranscript, getSpeakerMappings } from '../db/transcript';
 import { getJob } from '../db/jobs';
 import { readPreferences } from '../settings/store';
 import { formatLine } from './format-line';
+import { renderTranscriptDocx, transcriptLines } from '../export/transcript-docx';
 
 export { formatLine } from './format-line'; // re-exported so callers don't need to know format-line directly
 
 function formatTranscript(jobId: string, includeTimestamps: boolean): string {
   const turns = getTranscript(jobId);
   const mappings = getSpeakerMappings(jobId);
-  const nameMap = new Map<string, string>();
-  for (const m of mappings) {
-    nameMap.set(`${m.chunk_index}::${m.speaker_label}`, m.display_name || m.speaker_label);
-  }
-
-  return turns
-    .map(t => {
-      const name = nameMap.get(`${t.chunk_index}::${t.speaker_label}`) || t.speaker_label;
-      return formatLine(name, t.start_ms, t.text, includeTimestamps);
-    })
-    .join('\n');
+  return transcriptLines(turns, mappings, includeTimestamps).join('\n');
 }
 
 /** Windows reserved device names. */
@@ -41,20 +32,22 @@ export function registerExportHandlers(): void {
     const filename = WINDOWS_RESERVED.test(sanitizedTitle)
       ? `transcript_${sanitizedTitle}`
       : sanitizedTitle;
-    const defaultPath = `${filename}.txt`;
+    const defaultPath = `${filename}.docx`;
 
     const win = BrowserWindow.getAllWindows()[0];
     const result = await dialog.showSaveDialog(win, {
       title: 'Export Transcript',
       defaultPath,
-      filters: [{ name: 'Text', extensions: ['txt'] }],
+      filters: [{ name: 'Word Document', extensions: ['docx'] }],
     });
 
     if (result.canceled || !result.filePath) return { exported: false };
 
     const { includeTimestamps } = readPreferences();
-    const text = formatTranscript(jobId, includeTimestamps);
-    fs.writeFileSync(result.filePath, text, 'utf-8');
+    const turns = getTranscript(jobId);
+    const mappings = getSpeakerMappings(jobId);
+    const buffer = await renderTranscriptDocx(turns, mappings, includeTimestamps);
+    fs.writeFileSync(result.filePath, buffer);
     log.info(`Transcript exported to ${result.filePath}`);
     return { exported: true, filePath: result.filePath };
   });

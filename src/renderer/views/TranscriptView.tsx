@@ -132,18 +132,6 @@ export default function TranscriptView({ jobId, audioPath, summaryState, generat
             onClick={confirmAndGenerate} title={`${t('summary_hint')} — ${SUMMARY_MODEL}`}>
             {summarizing ? t('summary_generating') : t('summary_generate')}
           </button>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              if (!window.confirm(t('transcript_reset_confirm'))) return;
-              void resetTranscript();
-            }}
-            disabled={!hasEdits}
-            aria-label={t('transcript_reset_confirm_label')}
-            title={t('transcript_reset_title')}
-          >
-            {t('transcript_btn_reset')}
-          </button>
           <button className="btn btn-success btn-sm" onClick={() => void window.electronAPI.invoke('export:to-file', { jobId })}>
             {t('transcript_btn_export')}
           </button>
@@ -172,6 +160,23 @@ export default function TranscriptView({ jobId, audioPath, summaryState, generat
           audio src: {audioUrl}
         </div>
       )}
+
+      {/* Reset toolbar — sits directly above the turns list rather than the header,
+          since it acts on the list immediately below it. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-2)' }}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => {
+            if (!window.confirm(t('transcript_reset_confirm'))) return;
+            void resetTranscript();
+          }}
+          disabled={!hasEdits}
+          aria-label={t('transcript_reset_confirm_label')}
+          title={t('transcript_reset_title')}
+        >
+          {t('transcript_btn_reset')}
+        </button>
+      </div>
 
       {/* Turns */}
       <div className="transcript-turns">
