@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import log from 'electron-log';
-import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn } from './types';
+import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn, ProviderUsage } from './types';
 
 const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
 
@@ -70,9 +70,17 @@ export class OpenAIProvider implements TranscriptionProvider {
       throw new Error(`OpenAI transcription failed: HTTP ${resp.status} ${errText.slice(0, 200)}`);
     }
 
-    // diarized_json response: { segments: [{ speaker, start, end, text }] }
+    // diarized_json response: { segments: [{ speaker, start, end, text }], usage? }
+    // NOTE: the usage shape below is from OpenAI's documented Realtime/Audio usage
+    // object, not confirmed against a real diarized_json response — this project's
+    // configured OpenAI key does not have plan-level access to gpt-4o-transcribe-diarize
+    // (real Phase 5 verification call returned HTTP 403 model_not_found), so the one
+    // real-call check this phase requires could not run for this provider. Log-and-omit
+    // below is what makes that gap safe: an unconfirmed/wrong field name degrades to
+    // "no usage" rather than a silently wrong cost.
     const result = (await resp.json()) as {
       segments?: Array<{ speaker?: string; start: number; end: number; text: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number; input_token_details?: { audio_tokens?: number } };
     };
 
     onProgress('Complete');
@@ -85,6 +93,18 @@ export class OpenAIProvider implements TranscriptionProvider {
       text: seg.text.trim(),
     }));
 
-    return [{ chunkIndex: 0, turns }];
+    let usage: ProviderUsage | undefined;
+    if (result.usage) {
+      usage = {
+        kind: 'tokens',
+        inputTokens: result.usage.input_tokens ?? 0,
+        outputTokens: result.usage.output_tokens ?? 0,
+        audioTokens: result.usage.input_token_details?.audio_tokens,
+      };
+    } else {
+      log.warn('OpenAI transcribe: no usage field in response — cost will be unknown for this call');
+    }
+
+    return [{ chunkIndex: 0, turns, usage }];
   }
 }

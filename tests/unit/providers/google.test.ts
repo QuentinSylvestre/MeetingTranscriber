@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GoogleProvider } from '../../../src/main/providers/google';
+import log from 'electron-log';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -11,6 +12,15 @@ vi.mock('fs', async (importOriginal) => {
     readFileSync: vi.fn(() => Buffer.alloc(1024, 0)),
   };
 });
+
+// electron-log: silence output in tests, provide minimal API surface for spying.
+vi.mock('electron-log', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
 // Helpers for building mock responses in the new API shape.
 function makeWordAnnotation(text: string, speaker: string, startS: number, endS: number) {
@@ -61,7 +71,10 @@ function mockUploadThenTranscribe(transcriptionResponse: unknown) {
 describe('GoogleProvider', () => {
   const provider = new GoogleProvider('test-google-key');
 
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(log.warn).mockClear();
+  });
 
   it('groups word annotations by speaker into turns', async () => {
     mockUploadThenTranscribe(makeInteractionResponse([
@@ -168,6 +181,47 @@ describe('GoogleProvider', () => {
     await expect(
       provider.transcribeFile('/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal)
     ).rejects.toThrow('Google Gemini transcription failed: HTTP 403');
+  });
+
+  // Real-call verification (Phase 5) against /v1beta/interactions confirmed this exact
+  // shape — the plan's guessed promptTokenCount/candidatesTokenCount (the older
+  // generateContent API's usageMetadata field names) does not apply to this endpoint.
+  it('maps total_input_tokens/total_output_tokens/input_tokens_by_modality to a tokens ProviderUsage', async () => {
+    mockUploadThenTranscribe({
+      steps: [],
+      usage: {
+        total_input_tokens: 251,
+        total_output_tokens: 0,
+        total_cached_tokens: 0,
+        input_tokens_by_modality: [
+          { modality: 'text', tokens: 1 },
+          { modality: 'audio', tokens: 250 },
+        ],
+      },
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toEqual({
+      kind: 'tokens',
+      inputTokens: 251,
+      outputTokens: 0,
+      audioTokens: 250,
+      cachedTokens: 0,
+    });
+  });
+
+  it('logs a warning and omits usage when the usage field is absent (never defaults to zero)', async () => {
+    mockUploadThenTranscribe({ steps: [] });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no usage field in response'));
   });
 
   it('throws when File API initiate fails', async () => {

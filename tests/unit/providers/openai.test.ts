@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OpenAIProvider } from '../../../src/main/providers/openai';
+import log from 'electron-log';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -9,10 +10,22 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, readFileSync: vi.fn(() => Buffer.alloc(1024, 0)) };
 });
 
+// electron-log: silence output in tests, provide minimal API surface for spying.
+vi.mock('electron-log', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 describe('OpenAIProvider', () => {
   const provider = new OpenAIProvider('sk-test-key');
 
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(log.warn).mockClear();
+  });
 
   it('uses gpt-4o-transcribe-diarize with diarized_json and chunking_strategy=auto', async () => {
     mockFetch.mockResolvedValueOnce({
@@ -151,5 +164,43 @@ describe('OpenAIProvider', () => {
     );
 
     expect(results[0].turns).toHaveLength(0);
+  });
+
+  it('maps usage.input_tokens/output_tokens/audio_tokens to a tokens ProviderUsage', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        segments: [{ speaker: '0', start: 0.0, end: 1.0, text: 'Hi' }],
+        usage: { input_tokens: 100, output_tokens: 20, input_token_details: { audio_tokens: 90 } },
+      }),
+      text: async () => '',
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toEqual({ kind: 'tokens', inputTokens: 100, outputTokens: 20, audioTokens: 90 });
+  });
+
+  // This is the plan's own "an absent usage must not silently compute as $0" contract —
+  // this project's configured OpenAI key lacks access to gpt-4o-transcribe-diarize, so
+  // Phase 5's real-call verification could not confirm the field name against a real
+  // response; this degrade path is what makes that gap safe either way.
+  it('logs a warning and omits usage when the usage field is absent (never defaults to zero)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        segments: [{ speaker: '0', start: 0.0, end: 1.0, text: 'Hi' }],
+      }),
+      text: async () => '',
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no usage field in response'));
   });
 });

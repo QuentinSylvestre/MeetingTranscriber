@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ElevenLabsProvider } from '../../../src/main/providers/elevenlabs';
+import log from 'electron-log';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -9,11 +10,21 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, readFileSync: vi.fn(() => Buffer.from('fake-audio')) };
 });
 
+// electron-log: silence output in tests, provide minimal API surface for spying.
+vi.mock('electron-log', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 describe('ElevenLabsProvider', () => {
   const provider = new ElevenLabsProvider('test-xi-key');
 
   beforeEach(() => {
     mockFetch.mockReset();
+    vi.mocked(log.warn).mockClear();
   });
 
   it('maps integer speaker IDs to Speaker N labels', async () => {
@@ -91,5 +102,35 @@ describe('ElevenLabsProvider', () => {
     );
     expect(results[0].turns[0].startMs).toBe(1500);
     expect(results[0].turns[0].endMs).toBe(2300);
+  });
+
+  it('maps audio_duration_secs to a duration ProviderUsage', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        words: [{ type: 'word', speaker_id: 0, text: 'Hello', start: 0.0, end: 0.5 }],
+        audio_duration_secs: 10,
+      }),
+    });
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'fr', diarize: true }, () => {}, new AbortController().signal
+    );
+    expect(results[0].usage).toEqual({ kind: 'duration', seconds: 10 });
+  });
+
+  // Real-call verification (Phase 5) found no audio_duration_secs field in a real
+  // v1/speech-to-text response — this degradation path is not merely defensive.
+  it('logs a warning and omits usage when audio_duration_secs is absent (never defaults to 0)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        words: [{ type: 'word', speaker_id: 0, text: 'Hello', start: 0.0, end: 0.5 }],
+      }),
+    });
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'fr', diarize: true }, () => {}, new AbortController().signal
+    );
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no audio_duration_secs field'));
   });
 });

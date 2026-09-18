@@ -51,6 +51,44 @@ describe('AssemblyAIProvider', () => {
     expect(results[0].turns[0].endMs).toBe(2500);
   });
 
+  it('maps audio_duration and speech_model_used to a duration ProviderUsage', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_usage' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({
+      status: 'completed',
+      utterances: [{ speaker: 'A', start: 0, end: 2500, text: 'Hello' }],
+      audio_duration: 10,
+      speech_model_used: 'universal-3-5-pro',
+    }) });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true },
+      () => {},
+      new AbortController().signal
+    );
+
+    expect(results[0].usage).toEqual({ kind: 'duration', seconds: 10, modelUsed: 'universal-3-5-pro' });
+  });
+
+  it('defaults duration usage seconds to 0 when audio_duration is absent', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_usage2' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({
+      status: 'completed',
+      utterances: [],
+    }) });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true },
+      () => {},
+      new AbortController().signal
+    );
+
+    expect(results[0].usage).toEqual({ kind: 'duration', seconds: 0, modelUsed: undefined });
+  });
+
   it('throws on upload failure', async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(

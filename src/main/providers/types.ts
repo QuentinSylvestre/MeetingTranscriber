@@ -16,6 +16,10 @@ export interface SpeakerTurn {
   text: string;
 }
 
+export type ProviderUsage =
+  | { kind: 'duration'; seconds: number; modelUsed?: string }
+  | { kind: 'tokens'; inputTokens: number; outputTokens: number; audioTokens?: number; cachedTokens?: number };
+
 export interface TranscriptChunkResult {
   /**
    * Always 0: the adapter processes one audio file at a time.
@@ -25,6 +29,12 @@ export interface TranscriptChunkResult {
    */
   chunkIndex: number;
   turns: SpeakerTurn[];
+  /**
+   * Provider's already-available billing data for this call. Absent when the
+   * provider's response didn't include the expected usage field — callers must
+   * not default a missing usage to a computed cost of zero (see openai.ts/google.ts).
+   */
+  usage?: ProviderUsage;
 }
 
 export interface TranscriptionProvider {

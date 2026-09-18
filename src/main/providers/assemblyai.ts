@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn } from './types';
+import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn, ProviderUsage } from './types';
 import log from 'electron-log';
 
 const BASE_URL = 'https://api.assemblyai.com';
@@ -96,6 +96,8 @@ export class AssemblyAIProvider implements TranscriptionProvider {
         status: string;
         error?: string;
         utterances?: Array<{ speaker: string; start: number; end: number; text: string }>;
+        audio_duration?: number;
+        speech_model_used?: string;
       };
 
       if (result.status === 'error') throw new Error(`AssemblyAI transcription error: ${result.error}`);
@@ -107,7 +109,14 @@ export class AssemblyAIProvider implements TranscriptionProvider {
           endMs: Math.round(u.end),
           text: u.text,
         }));
-        return [{ chunkIndex: 0, turns }];
+        // Confirmed via real call (Phase 5 verification): a completed transcript always
+        // carries audio_duration and speech_model_used, even for silent/empty audio.
+        const usage: ProviderUsage = {
+          kind: 'duration',
+          seconds: result.audio_duration ?? 0,
+          modelUsed: result.speech_model_used,
+        };
+        return [{ chunkIndex: 0, turns, usage }];
       }
 
       onProgress(`Status: ${result.status}`);

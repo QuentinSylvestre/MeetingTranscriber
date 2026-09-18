@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import log from 'electron-log';
-import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn } from './types';
+import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn, ProviderUsage } from './types';
 
 // Gemini 3.5 Transcribe — dedicated speech-to-text model.
 // Docs: https://ai.google.dev/gemini-api/docs/transcribe
@@ -122,7 +122,34 @@ export class GoogleProvider implements TranscriptionProvider {
     type WordInfo = { type: string; text: string; speaker?: string; start_offset?: string; end_offset?: string };
     type ContentBlock = { text?: string; annotations?: WordInfo[] };
     type Step = { content?: ContentBlock[] };
-    const result = (await resp.json()) as { steps?: Step[] };
+    // Usage shape confirmed via a real Phase 5 verification call against
+    // /v1beta/interactions: the plan's guessed promptTokenCount/candidatesTokenCount
+    // (the older generateContent API's usageMetadata shape) does NOT apply here.
+    // The real, top-level `usage` object looks like:
+    //   { total_input_tokens, total_output_tokens, total_cached_tokens,
+    //     input_tokens_by_modality: [{ modality: 'text'|'audio', tokens }], ... }
+    type ModalityTokens = { modality: string; tokens: number };
+    type InteractionUsage = {
+      total_input_tokens?: number;
+      total_output_tokens?: number;
+      total_cached_tokens?: number;
+      input_tokens_by_modality?: ModalityTokens[];
+    };
+    const result = (await resp.json()) as { steps?: Step[]; usage?: InteractionUsage };
+
+    let usage: ProviderUsage | undefined;
+    if (result.usage) {
+      const audioTokens = result.usage.input_tokens_by_modality?.find((m) => m.modality === 'audio')?.tokens;
+      usage = {
+        kind: 'tokens',
+        inputTokens: result.usage.total_input_tokens ?? 0,
+        outputTokens: result.usage.total_output_tokens ?? 0,
+        audioTokens,
+        cachedTokens: result.usage.total_cached_tokens,
+      };
+    } else {
+      log.warn('Google transcribe: no usage field in response — cost will be unknown for this call');
+    }
 
     // Collect all word_info annotations across all steps/content blocks.
     const words: WordInfo[] = [];
@@ -139,7 +166,7 @@ export class GoogleProvider implements TranscriptionProvider {
 
     if (words.length === 0) {
       log.warn('Google: no word annotations returned (silent audio or diarization produced no words)');
-      return [{ chunkIndex: 0, turns: [] }];
+      return [{ chunkIndex: 0, turns: [], usage }];
     }
 
     // Group consecutive words by speaker into turns.
@@ -187,7 +214,7 @@ export class GoogleProvider implements TranscriptionProvider {
       });
     }
 
-    return [{ chunkIndex: 0, turns }];
+    return [{ chunkIndex: 0, turns, usage }];
   }
 
   private async uploadFile(
