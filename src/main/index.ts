@@ -38,32 +38,55 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-// registerAppScheme must be called before app.whenReady() — it uses
-// protocol.registerSchemesAsPrivileged which is only valid before the app is ready.
-registerAppScheme();
+// Single-instance lock: two Electron instances must never run concurrently against the
+// same userData SQLite database (a stray leftover dev process once raced a real
+// migration — harmlessly, but it showed the gap). A second launch attempt quits
+// immediately, before registering any handlers, opening a second DB connection, or
+// creating a window. (A top-level `return` here would stop only under a CommonJS
+// module wrapper and fails `tsc --noEmit` under this project's ESNext module target,
+// so the rest of module setup is gated by the `else` branch instead.)
+const gotLock = app.requestSingleInstanceLock();
 
-app.whenReady().then(() => {
-  log = initLogger(); // Safe: app is ready, getPath works (F9)
-  registerAllHandlers(); // Register IPC before creating window (includes recoverInterruptedJobs)
-  registerAppProtocol(); // Register app:// protocol for audio file access (Phase 8)
-  log.info('App ready, creating window');
-  createWindow();
-  // Wire close guards after window creation so the getter returns the live window
-  registerLifecycleHandlers(() => BrowserWindow.getAllWindows()[0] ?? null);
-  // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-}).catch((err: Error) => {
-  // F9: log may not be initialized if whenReady() rejects before initLogger()
-  console.error('Failed to initialize app:', err);
+if (!gotLock) {
   app.quit();
-});
+} else {
+  // registerAppScheme must be called before app.whenReady() — it uses
+  // protocol.registerSchemesAsPrivileged which is only valid before the app is ready.
+  registerAppScheme();
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  app.whenReady().then(() => {
+    log = initLogger(); // Safe: app is ready, getPath works (F9)
+    registerAllHandlers(); // Register IPC before creating window (includes recoverInterruptedJobs)
+    registerAppProtocol(); // Register app:// protocol for audio file access (Phase 8)
+    log.info('App ready, creating window');
+    createWindow();
+    // Wire close guards after window creation so the getter returns the live window
+    registerLifecycleHandlers(() => BrowserWindow.getAllWindows()[0] ?? null);
+    // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  }).catch((err: Error) => {
+    // F9: log may not be initialized if whenReady() rejects before initLogger()
+    console.error('Failed to initialize app:', err);
+    app.quit();
+  });
 
-app.on('before-quit', () => {
-  closeDb();
-});
+  // Fires in this (already-running) instance when a second launch is attempted.
+  // Bring the existing window to the front instead of letting a second instance run.
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0] ?? null;
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  app.on('before-quit', () => {
+    closeDb();
+  });
+}
