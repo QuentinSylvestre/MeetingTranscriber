@@ -23,7 +23,7 @@ export default function SettingsView(): React.ReactElement {
   const [defaultLanguage, setDefaultLanguage] = useState<'fr' | 'en'>('fr');
   const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
-  const [fontSize, setFontSize] = useState<number>(14);
+  const [fontSize, setFontSize] = useState<number>(18);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -56,7 +56,7 @@ export default function SettingsView(): React.ReactElement {
       const langVal = (lang === 'fr' || lang === 'en') ? lang as 'fr' | 'en' : 'fr';
       const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
       const tsVal = typeof ts === 'boolean' ? ts : true;
-      const sizeVal = [14, 16, 18, 20].includes(fSize as number) ? (fSize as number) : 14;
+      const sizeVal = [14, 16, 18, 20].includes(fSize as number) ? (fSize as number) : 18;
       setDefaultProvider(provVal);
       setDefaultLanguage(langVal);
       setAppLanguage(appLangVal);

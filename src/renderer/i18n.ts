@@ -156,9 +156,9 @@ export const en = {
   // Settings Accessibility
   settings_fontsize_heading: 'Accessibility',
   settings_fontsize_label: 'Text size',
-  settings_fontsize_medium: 'Medium (default)',
+  settings_fontsize_medium: 'Medium',
   settings_fontsize_large: 'Large',
-  settings_fontsize_xl: 'Extra large',
+  settings_fontsize_xl: 'Extra large (default)',
   settings_fontsize_xxl: 'XXL',
 } as const;
 
@@ -185,7 +185,7 @@ export const fr: Record<I18nKey, string> = {
   summary_error_save_failed: 'Impossible d’écrire le document. Il est conservé en mémoire : vous pouvez l’enregistrer ailleurs sans payer de nouveau.',
   summary_error_open_failed: 'Impossible d’ouvrir le document. Il a pu être déplacé ou supprimé. Les emplacements enregistrés ne sont mémorisés que jusqu’à la fermeture de l’application.',
   nav_record: 'Enregistrer',
-  nav_upload: 'Importer',
+  nav_upload: 'Transcrire',
   nav_history: 'Historique',
   nav_settings: 'Paramètres',
   sidebar_brand: 'Transcripteur',
@@ -300,8 +300,8 @@ export const fr: Record<I18nKey, string> = {
   settings_include_timestamps_label: 'Inclure les horodatages lors de la copie/export',
   settings_fontsize_heading: 'Accessibilité',
   settings_fontsize_label: 'Taille du texte',
-  settings_fontsize_medium: 'Moyenne (défaut)',
+  settings_fontsize_medium: 'Moyenne',
   settings_fontsize_large: 'Grand',
-  settings_fontsize_xl: 'Très grand',
+  settings_fontsize_xl: 'Très grand (défaut)',
   settings_fontsize_xxl: 'XXL',
 };

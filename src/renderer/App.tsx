@@ -14,7 +14,7 @@ import type { Job } from '../shared/ipc-types';
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
 export default function App(): React.ReactElement {
-  const [currentView, setCurrentView] = useState<View>('record');
+  const [currentView, setCurrentView] = useState<View>('upload');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobAudioPath, setActiveJobAudioPath] = useState<string | null>(null);
   // True only while a transcription job is actively running (progress view).
@@ -30,7 +30,7 @@ export default function App(): React.ReactElement {
     let alive = true;
     getPreference('fontSize').then((value) => {
       if (!alive) return;
-      const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 14;
+      const size = [14, 16, 18, 20].includes(value as number) ? (value as number) : 18;
       document.documentElement.style.setProperty('--font-size-base', `${size}px`);
       document.documentElement.style.setProperty('--font-size-ui', `${size - 1}px`);
     }).catch(console.error);
