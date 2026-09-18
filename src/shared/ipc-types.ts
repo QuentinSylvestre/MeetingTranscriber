@@ -101,7 +101,7 @@ export interface IpcChannels {
 
   // Database channels (Phase 3)
   'db:create-job': {
-    request: { job: Omit<Job, 'status' | 'error_msg'> & { status?: JobStatus } };
+    request: { job: Omit<Job, 'status' | 'error_msg' | 'cost_usd'> & { status?: JobStatus } };
     response: void;
   };
   'db:update-job-status': {

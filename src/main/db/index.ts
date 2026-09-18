@@ -94,6 +94,10 @@ export function initDb(): void {
   // WAL mode for concurrent reads + write performance
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON'); // Enable cascade deletes
+  // A lock conflict from a second process touching the same file retries for up
+  // to 5s instead of failing/racing immediately. A broader fix (an app-level
+  // app.requestSingleInstanceLock()) is out of scope for this file.
+  _db.pragma('busy_timeout = 5000');
 
   // F2: wrap migration in a transaction so a partial failure leaves no half-applied schema.
   // All CREATE TABLE / CREATE INDEX statements use IF NOT EXISTS — idempotent on re-run.
@@ -107,24 +111,52 @@ export function initDb(): void {
   }
 
   const version = _db.pragma('user_version', { simple: true }) as number;
-  if (version < 1) _db.pragma('user_version = 1');
 
-  if (dbAlreadyExisted && version < 2) {
-    // Safety net mirroring this project's established precedent for schema changes
-    // against a live personal database. `dbAlreadyExisted` is the correct signal
-    // (see comment above) — a fresh install (no pre-existing file, no real data
-    // yet) skips this backup entirely.
-    // The app runs in WAL mode: recent commits can still live only in
-    // `-wal`, so checkpoint first to make the copy a complete snapshot.
-    _db.pragma('wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath, `${dbPath}.bak-pre-v2-${Date.now()}`);
-  }
+  try {
+    if (dbAlreadyExisted && version < 2) {
+      // Safety net mirroring this project's established precedent for schema changes
+      // against a live personal database. `dbAlreadyExisted` is the correct signal
+      // (see comment above) — a fresh install (no pre-existing file, no real data
+      // yet) skips this backup entirely.
+      // The app runs in WAL mode: recent commits can still live only in
+      // `-wal`, so checkpoint first to make the copy a complete snapshot.
+      const checkpointResult = _db.pragma('wal_checkpoint(TRUNCATE)') as Array<{
+        busy: number;
+        log: number;
+        checkpointed: number;
+      }>;
+      if (checkpointResult[0]?.busy) {
+        log.warn(
+          'wal_checkpoint(TRUNCATE) reported busy before the pre-migration backup — ' +
+          'the backup copy may not include all recently-committed WAL data. Proceeding anyway.'
+        );
+      }
+      const backupPath = `${dbPath}.bak-pre-v2-${Date.now()}`;
+      try {
+        fs.copyFileSync(dbPath, backupPath);
+      } catch (backupErr) {
+        // Best-effort cleanup: don't leave a partial/corrupt backup file behind
+        // for a future run to be confused by.
+        try {
+          if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+        } catch (cleanupErr) {
+          log.error('Failed to remove partial pre-migration backup file after a failed backup:', cleanupErr);
+        }
+        throw backupErr;
+      }
+      log.info(`Pre-migration backup created at: ${backupPath}`);
+    }
 
-  if (version < 2) {
-    // PRAGMA user_version = 2 is the last statement inside MIGRATION_002 itself, so
-    // the schema change and the version bump commit as one atomic unit.
-    const migrate2 = _db.transaction(() => { _db!.exec(MIGRATION_002); });
-    migrate2();
+    if (version < 2) {
+      // PRAGMA user_version = 2 is the last statement inside MIGRATION_002 itself, so
+      // the schema change and the version bump commit as one atomic unit.
+      const migrate2 = _db.transaction(() => { _db!.exec(MIGRATION_002); });
+      migrate2();
+      log.info('MIGRATION_002 applied successfully');
+    }
+  } catch (err) {
+    log.error('MIGRATION_002 (or its pre-migration backup) failed:', err);
+    throw err;
   }
 
   log.info('Database initialized');

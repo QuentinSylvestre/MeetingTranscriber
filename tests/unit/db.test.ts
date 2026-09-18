@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 // DB tests require better-sqlite3 built for the current Node ABI.
 // After `npm run dev` (which rebuilds for Electron ABI 135), these will fail
@@ -28,6 +29,13 @@ vi.mock('../../src/main/db/index', () => ({
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/test'), ipcMain: {} },
   ipcMain: { handle: vi.fn() },
+}));
+
+// electron-log: silence output in tests, provide minimal API surface. Only
+// exercised below by the real (unmocked) initDb() — the rest of this file uses
+// a fully mocked '../../src/main/db/index' that never imports electron-log.
+vi.mock('electron-log', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 const MIGRATIONS_DIR = path.join(
@@ -355,6 +363,119 @@ describe.skipIf(!Database)('cost tracking and summary persistence', () => {
     deleteJob('job-summary-cascade');
 
     expect(getSummaryRecord('job-summary-cascade')).toBeNull();
+  });
+});
+
+// The suite above mocks '../../src/main/db/index' to a no-op and execs the
+// migration SQL files directly against an in-memory db, so it never exercises
+// initDb()'s own gating/backup/atomicity logic. This block tests the REAL,
+// unmocked initDb() against real temp-directory files (never real user data)
+// to close that gap. vi.importActual bypasses the file-level mock above for
+// this one module only; its own 'electron'/'electron-log' imports still
+// resolve through this file's existing mocks.
+describe.skipIf(!Database)('initDb() migration runner (real implementation)', () => {
+  let real: typeof import('../../src/main/db/index');
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    real = await vi.importActual<typeof import('../../src/main/db/index')>('../../src/main/db/index');
+  });
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mt-db-'));
+    const electron = await import('electron');
+    vi.mocked(electron.app.getPath).mockReturnValue(tmpDir);
+  });
+
+  afterEach(() => {
+    real.closeDb(); // release the file handle before removing the directory (required on Windows)
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // Seeds a pre-v2 db.sqlite (schema from 001_initial.sql only, one row, no
+  // user_version bump) — mirroring a real pre-existing install, per the
+  // project's own comment that user_version reads 0 for both a brand-new file
+  // AND every database that predates the versioning scheme.
+  function seedPreexistingDb(dbPath: string): void {
+    const raw = new Database!(dbPath);
+    raw.exec(fs.readFileSync(path.join(MIGRATIONS_DIR, '001_initial.sql'), 'utf-8'));
+    raw.prepare(`
+      INSERT INTO jobs (id, title, created_at, audio_path, provider, model, language, status, chunk_count)
+      VALUES (@id, @title, @created_at, @audio_path, @provider, @model, @language, @status, @chunk_count)
+    `).run({
+      id: 'job-preexisting',
+      title: 'Pre-existing job',
+      created_at: Date.now(),
+      audio_path: '/tmp/pre.mp3',
+      provider: 'assemblyai',
+      model: 'universal',
+      language: 'fr',
+      status: 'done',
+      chunk_count: 1,
+    });
+    raw.close();
+  }
+
+  function listBackups(dir: string): string[] {
+    return fs.readdirSync(dir).filter((f) => f.startsWith('db.sqlite.bak-pre-v2-'));
+  }
+
+  it('a fresh install (no pre-existing db file) produces no pre-migration backup', () => {
+    real.initDb();
+
+    const dbPath = path.join(tmpDir, 'db.sqlite');
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(listBackups(tmpDir)).toHaveLength(0);
+    expect(real.getDb().pragma('user_version', { simple: true })).toBe(2);
+  });
+
+  it('migrating an existing pre-v2 db produces exactly one backup, taken before the schema change', () => {
+    const dbPath = path.join(tmpDir, 'db.sqlite');
+    seedPreexistingDb(dbPath);
+
+    real.initDb();
+
+    const backups = listBackups(tmpDir);
+    expect(backups).toHaveLength(1);
+
+    const backupDb = new Database!(path.join(tmpDir, backups[0]));
+    try {
+      // The backup must reflect the PRE-migration state: version below 2, no
+      // cost_usd column, no job_summaries table.
+      expect(backupDb.pragma('user_version', { simple: true }) as number).toBeLessThan(2);
+      const columns = backupDb.pragma('table_info(jobs)') as Array<{ name: string }>;
+      expect(columns.some((c) => c.name === 'cost_usd')).toBe(false);
+      const jobSummariesTable = backupDb
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='job_summaries'")
+        .get();
+      expect(jobSummariesTable).toBeUndefined();
+    } finally {
+      backupDb.close();
+    }
+
+    const liveDb = real.getDb();
+    expect(liveDb.pragma('user_version', { simple: true })).toBe(2);
+    const liveColumns = liveDb.pragma('table_info(jobs)') as Array<{ name: string }>;
+    expect(liveColumns.some((c) => c.name === 'cost_usd')).toBe(true);
+    const preexisting = liveDb.prepare('SELECT title FROM jobs WHERE id = ?').get('job-preexisting') as
+      | { title: string }
+      | undefined;
+    expect(preexisting?.title).toBe('Pre-existing job');
+  });
+
+  it('calling initDb() again against the now-migrated file does not re-run MIGRATION_002', () => {
+    const dbPath = path.join(tmpDir, 'db.sqlite');
+    seedPreexistingDb(dbPath);
+
+    real.initDb();
+    expect(listBackups(tmpDir)).toHaveLength(1);
+    real.closeDb();
+
+    // A second initDb() against the same (now v2) file must not re-run the
+    // non-idempotent ALTER TABLE (which would throw "duplicate column name")
+    // and must not create a second backup.
+    expect(() => real.initDb()).not.toThrow();
+    expect(listBackups(tmpDir)).toHaveLength(1);
   });
 });
 
