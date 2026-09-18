@@ -1,7 +1,10 @@
 import { getDb } from './index';
 import type { Job, JobStatus } from '../../shared/ipc-types';
 
-export function createJob(job: Job): void {
+// cost_usd is intentionally excluded here: a new job always starts with no
+// recorded spend (the column defaults to NULL) and is only ever moved via the
+// accumulating updateJobCost() below — never set at creation time.
+export function createJob(job: Omit<Job, 'cost_usd'>): void {
   const db = getDb();
   db.prepare(`
     INSERT INTO jobs (id, title, created_at, audio_path, duration_s, provider, model, language, status, error_msg, chunk_count)
@@ -44,4 +47,12 @@ export function deleteJob(id: string): void {
 export function updateJobTitle(id: string, title: string): void {
   const db = getDb();
   db.prepare('UPDATE jobs SET title = @title WHERE id = @id').run({ title, id });
+}
+
+// Accumulates rather than overwrites: a regenerated compte-rendu (or a later
+// transcription chunk) is genuinely additional spend on the same job.
+export function updateJobCost(id: string, incrementUsd: number): void {
+  const db = getDb();
+  db.prepare('UPDATE jobs SET cost_usd = COALESCE(cost_usd, 0) + @increment WHERE id = @id')
+    .run({ id, increment: incrementUsd });
 }

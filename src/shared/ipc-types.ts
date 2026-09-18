@@ -14,6 +14,7 @@ export interface Job {
   status: JobStatus;
   error_msg: string | null;
   chunk_count: number;
+  cost_usd: number | null;
 }
 
 export interface TranscriptTurn {

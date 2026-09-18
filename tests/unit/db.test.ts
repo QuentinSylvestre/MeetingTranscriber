@@ -42,6 +42,8 @@ beforeAll(() => {
   db.pragma('foreign_keys = ON');
   const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, '001_initial.sql'), 'utf-8');
   db.exec(sql);
+  const sql002 = fs.readFileSync(path.join(MIGRATIONS_DIR, '002_add_cost_and_summaries.sql'), 'utf-8');
+  db.exec(sql002);
 });
 
 afterAll(() => {
@@ -269,6 +271,90 @@ describe.skipIf(!Database)('transcript CRUD', () => {
     expect(resetTurns[0].original_text).toBe('Original');
     // Verify DB state matches
     expect(getTranscript('job-reset')[0].text).toBe('Original');
+  });
+});
+
+describe.skipIf(!Database)('cost tracking and summary persistence', () => {
+  it('updateJobCost accumulates rather than overwrites across two calls', async () => {
+    const { createJob, updateJobCost, getJob } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-cost',
+      title: 'Cost Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/cost.mp3',
+      duration_s: null,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'pending' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+
+    updateJobCost('job-cost', 0.05);
+    updateJobCost('job-cost', 0.03);
+
+    const job = getJob('job-cost');
+    expect(job?.cost_usd).toBeCloseTo(0.08, 10);
+  });
+
+  it('saveSummaryRecord/getSummaryRecord round-trip', async () => {
+    const { createJob } = await import('../../src/main/db/jobs');
+    const { saveSummaryRecord, getSummaryRecord } = await import('../../src/main/db/summaries');
+    createJob({
+      id: 'job-summary',
+      title: 'Summary Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/summary.mp3',
+      duration_s: null,
+      provider: 'openai' as const,
+      model: 'gpt-4o-transcribe-diarize',
+      language: 'fr' as const,
+      status: 'done' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+
+    const summaryJson = JSON.stringify({ topics: [] });
+    saveSummaryRecord('job-summary', summaryJson, 'transcript snapshot text');
+
+    const record = getSummaryRecord('job-summary');
+    expect(record).not.toBeNull();
+    expect(record?.summary_json).toBe(summaryJson);
+    expect(record?.transcript_snapshot).toBe('transcript snapshot text');
+    expect(typeof record?.created_at).toBe('number');
+
+    // Regenerating replaces rather than duplicates (SC-8: only the latest is retained).
+    const secondSummaryJson = JSON.stringify({ topics: ['updated'] });
+    saveSummaryRecord('job-summary', secondSummaryJson, 'updated snapshot');
+
+    const updated = getSummaryRecord('job-summary');
+    expect(updated?.summary_json).toBe(secondSummaryJson);
+    expect(updated?.transcript_snapshot).toBe('updated snapshot');
+  });
+
+  it('job_summaries cascades on deleteJob', async () => {
+    const { createJob, deleteJob } = await import('../../src/main/db/jobs');
+    const { saveSummaryRecord, getSummaryRecord } = await import('../../src/main/db/summaries');
+    createJob({
+      id: 'job-summary-cascade',
+      title: 'Summary Cascade Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/summary-cascade.mp3',
+      duration_s: null,
+      provider: 'openai' as const,
+      model: 'gpt-4o-transcribe-diarize',
+      language: 'fr' as const,
+      status: 'done' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+    saveSummaryRecord('job-summary-cascade', JSON.stringify({ topics: [] }), 'snapshot');
+    expect(getSummaryRecord('job-summary-cascade')).not.toBeNull();
+
+    deleteJob('job-summary-cascade');
+
+    expect(getSummaryRecord('job-summary-cascade')).toBeNull();
   });
 });
 
