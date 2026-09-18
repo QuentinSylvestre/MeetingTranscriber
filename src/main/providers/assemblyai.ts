@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import type { TranscriptionProvider, TranscriptionOptions, TranscriptChunkResult, SpeakerTurn, ProviderUsage } from './types';
 import log from 'electron-log';
 
@@ -20,6 +21,7 @@ export class AssemblyAIProvider implements TranscriptionProvider {
     signal: AbortSignal
   ): Promise<TranscriptChunkResult[]> {
     onProgress('Uploading audio...');
+    const filename = path.basename(filePath);
 
     // 1. Upload file
     const fileBuffer = fs.readFileSync(filePath);
@@ -109,13 +111,20 @@ export class AssemblyAIProvider implements TranscriptionProvider {
           endMs: Math.round(u.end),
           text: u.text,
         }));
-        // Confirmed via real call (Phase 5 verification): a completed transcript always
-        // carries audio_duration and speech_model_used, even for silent/empty audio.
-        const usage: ProviderUsage = {
-          kind: 'duration',
-          seconds: result.audio_duration ?? 0,
-          modelUsed: result.speech_model_used,
-        };
+        let usage: ProviderUsage | undefined;
+        try {
+          // Confirmed via real call (Phase 5 verification): a completed transcript always
+          // carries audio_duration and speech_model_used, even for silent/empty audio —
+          // but guard with typeof rather than defaulting a missing/malformed value to 0:
+          // a missing usage must never silently compute as a $0 cost (see types.ts).
+          if (typeof result.audio_duration === 'number') {
+            usage = { kind: 'duration', seconds: result.audio_duration, modelUsed: result.speech_model_used };
+          } else {
+            log.warn(`AssemblyAI transcribe: no audio_duration field in response (${filename}) — cost will be unknown for this call`);
+          }
+        } catch (err) {
+          log.warn(`AssemblyAI transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
+        }
         return [{ chunkIndex: 0, turns, usage }];
       }
 

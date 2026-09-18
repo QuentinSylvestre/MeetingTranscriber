@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblyAIProvider } from '../../../src/main/providers/assemblyai';
+import log from 'electron-log';
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -14,12 +15,22 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
+// electron-log: silence output in tests, provide minimal API surface for spying.
+vi.mock('electron-log', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 describe('AssemblyAIProvider', () => {
   // Pass pollIntervalMs=0 so tests don't wait real time between polls
   const provider = new AssemblyAIProvider('test-api-key', 0);
 
   beforeEach(() => {
     mockFetch.mockReset();
+    vi.mocked(log.warn).mockClear();
   });
 
   it('normalizes speaker labels from A to Speaker A', async () => {
@@ -71,7 +82,10 @@ describe('AssemblyAIProvider', () => {
     expect(results[0].usage).toEqual({ kind: 'duration', seconds: 10, modelUsed: 'universal-3-5-pro' });
   });
 
-  it('defaults duration usage seconds to 0 when audio_duration is absent', async () => {
+  // Fix 4 (review pass): AssemblyAI used to be the only adapter still defaulting a
+  // missing audio_duration to a silent 0. It now matches the other three adapters'
+  // log-and-omit convention — a missing usage must never compute as a $0 cost.
+  it('logs a warning and omits usage when audio_duration is absent (never defaults to 0)', async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_usage2' }) });
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({
@@ -86,7 +100,28 @@ describe('AssemblyAIProvider', () => {
       new AbortController().signal
     );
 
-    expect(results[0].usage).toEqual({ kind: 'duration', seconds: 0, modelUsed: undefined });
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no audio_duration field'));
+  });
+
+  it('logs a warning and omits usage when audio_duration is present but non-numeric', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ upload_url: 'https://cdn/audio.mp3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'txid_usage3' }) });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({
+      status: 'completed',
+      utterances: [],
+      audio_duration: 'ten', // malformed: a string instead of a number
+    }) });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3',
+      { language: 'fr', diarize: true },
+      () => {},
+      new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no audio_duration field'));
   });
 
   it('throws on upload failure', async () => {

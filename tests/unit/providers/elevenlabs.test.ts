@@ -133,4 +133,22 @@ describe('ElevenLabsProvider', () => {
     expect(results[0].usage).toBeUndefined();
     expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no audio_duration_secs field'));
   });
+
+  // Fix 5 (review pass): the existing absence test only simulates the field being
+  // completely missing. `null` is a distinct malformed shape (typeof null === 'object'),
+  // confirming the typeof === 'number' guard correctly rejects it too, not just absence.
+  it('logs a warning and omits usage when audio_duration_secs is null (not just absent)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        words: [{ type: 'word', speaker_id: 0, text: 'Hello', start: 0.0, end: 0.5 }],
+        audio_duration_secs: null,
+      }),
+    });
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'fr', diarize: true }, () => {}, new AbortController().signal
+    );
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no audio_duration_secs field'));
+  });
 });

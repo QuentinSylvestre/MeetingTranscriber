@@ -138,17 +138,38 @@ export class GoogleProvider implements TranscriptionProvider {
     const result = (await resp.json()) as { steps?: Step[]; usage?: InteractionUsage };
 
     let usage: ProviderUsage | undefined;
-    if (result.usage) {
-      const audioTokens = result.usage.input_tokens_by_modality?.find((m) => m.modality === 'audio')?.tokens;
-      usage = {
-        kind: 'tokens',
-        inputTokens: result.usage.total_input_tokens ?? 0,
-        outputTokens: result.usage.total_output_tokens ?? 0,
-        audioTokens,
-        cachedTokens: result.usage.total_cached_tokens,
-      };
-    } else {
-      log.warn('Google transcribe: no usage field in response — cost will be unknown for this call');
+    try {
+      // Guard on the actual numeric fields, not just parent-object truthiness — a
+      // present-but-malformed usage object (e.g. `usage: {}`) must never silently
+      // compute as a $0 cost. Both inputTokens and outputTokens are required numeric,
+      // matching the other token-usage adapter's "both-fields-numeric" gate.
+      //
+      // input_tokens_by_modality is documented as an array, but a malformed/differently
+      // -shaped response could send something else (e.g. a keyed object instead of an
+      // array) — Array.isArray guards that so a single malformed field can never throw
+      // and take an otherwise-successful chunk's turns down with it (see runner.ts:
+      // saveTranscript only runs once, after every chunk in the job has succeeded).
+      const usageData = result.usage;
+      const modality = usageData?.input_tokens_by_modality;
+      if (
+        usageData &&
+        typeof usageData.total_input_tokens === 'number' &&
+        typeof usageData.total_output_tokens === 'number' &&
+        (modality === undefined || Array.isArray(modality))
+      ) {
+        const audioTokens = modality?.find((m) => m.modality === 'audio')?.tokens;
+        usage = {
+          kind: 'tokens',
+          inputTokens: usageData.total_input_tokens,
+          outputTokens: usageData.total_output_tokens,
+          audioTokens,
+          cachedTokens: usageData.total_cached_tokens,
+        };
+      } else {
+        log.warn(`Google transcribe: usage field missing or invalid in response (${filename}) — cost will be unknown for this call`);
+      }
+    } catch (err) {
+      log.warn(`Google transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
     }
 
     // Collect all word_info annotations across all steps/content blocks.

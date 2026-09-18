@@ -32,7 +32,9 @@ export interface TranscriptChunkResult {
   /**
    * Provider's already-available billing data for this call. Absent when the
    * provider's response didn't include the expected usage field — callers must
-   * not default a missing usage to a computed cost of zero (see openai.ts/google.ts).
+   * not default a missing usage to a computed cost of zero (see assemblyai.ts,
+   * elevenlabs.ts, openai.ts, google.ts — all four adapters follow this
+   * log-and-omit convention).
    */
   usage?: ProviderUsage;
 }

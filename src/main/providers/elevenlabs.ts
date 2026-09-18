@@ -56,18 +56,6 @@ export class ElevenLabsProvider implements TranscriptionProvider {
     onProgress('Complete');
     log.info(`ElevenLabs transcription complete: ${result.words?.length ?? 0} words`);
 
-    // Real-call verification (Phase 5) found no audio_duration_secs (or any duration
-    // field) in a real v1/speech-to-text response — for that request shape (no
-    // diarize/language_code, silent fixture audio), the plan's "always present by
-    // contract" assumption did not hold. Degrade the same way as OpenAI/Google rather
-    // than defaulting to 0, which would silently compute as $0 for a real paid call.
-    let usage: ProviderUsage | undefined;
-    if (typeof result.audio_duration_secs === 'number') {
-      usage = { kind: 'duration', seconds: result.audio_duration_secs };
-    } else {
-      log.warn('ElevenLabs transcribe: no audio_duration_secs field in response — cost will be unknown for this call');
-    }
-
     // Group consecutive words by speaker into turns
     const turns: SpeakerTurn[] = [];
     let currentSpeaker: string | null = null;
@@ -106,6 +94,22 @@ export class ElevenLabsProvider implements TranscriptionProvider {
         endMs: currentEnd,
         text: currentWords.join(' ').trim(),
       });
+    }
+
+    let usage: ProviderUsage | undefined;
+    try {
+      // Real-call verification (Phase 5) found no audio_duration_secs (or any duration
+      // field) in a real v1/speech-to-text response — for that request shape (no
+      // diarize/language_code, silent fixture audio), the plan's "always present by
+      // contract" assumption did not hold. Degrade the same way as OpenAI/Google rather
+      // than defaulting to 0, which would silently compute as $0 for a real paid call.
+      if (typeof result.audio_duration_secs === 'number') {
+        usage = { kind: 'duration', seconds: result.audio_duration_secs };
+      } else {
+        log.warn(`ElevenLabs transcribe: no audio_duration_secs field in response (${filename}) — cost will be unknown for this call`);
+      }
+    } catch (err) {
+      log.warn(`ElevenLabs transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
     }
 
     return [{ chunkIndex: 0, turns, usage }];

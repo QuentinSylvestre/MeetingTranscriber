@@ -80,7 +80,9 @@ export class OpenAIProvider implements TranscriptionProvider {
     // "no usage" rather than a silently wrong cost.
     const result = (await resp.json()) as {
       segments?: Array<{ speaker?: string; start: number; end: number; text: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number; input_token_details?: { audio_tokens?: number } };
+      // OpenAI's usage object is documented as polymorphic, discriminated by `type`:
+      // {"type":"tokens", input_tokens, output_tokens, ...} vs {"type":"duration", seconds}.
+      usage?: { type?: string; input_tokens?: number; output_tokens?: number; input_token_details?: { audio_tokens?: number } };
     };
 
     onProgress('Complete');
@@ -94,15 +96,30 @@ export class OpenAIProvider implements TranscriptionProvider {
     }));
 
     let usage: ProviderUsage | undefined;
-    if (result.usage) {
-      usage = {
-        kind: 'tokens',
-        inputTokens: result.usage.input_tokens ?? 0,
-        outputTokens: result.usage.output_tokens ?? 0,
-        audioTokens: result.usage.input_token_details?.audio_tokens,
-      };
-    } else {
-      log.warn('OpenAI transcribe: no usage field in response — cost will be unknown for this call');
+    try {
+      // Guard on the actual numeric fields, not just parent-object truthiness — a
+      // present-but-malformed usage object (e.g. `usage: {}`, or a `type: "duration"`
+      // shape that doesn't carry token counts) must never silently compute as a $0
+      // cost. Both inputTokens and outputTokens are required numeric, matching the
+      // other adapters' "both-fields-numeric" gate for the tokens usage kind.
+      const usageData = result.usage;
+      if (
+        usageData &&
+        typeof usageData.input_tokens === 'number' &&
+        typeof usageData.output_tokens === 'number' &&
+        (usageData.type === undefined || usageData.type === 'tokens')
+      ) {
+        usage = {
+          kind: 'tokens',
+          inputTokens: usageData.input_tokens,
+          outputTokens: usageData.output_tokens,
+          audioTokens: usageData.input_token_details?.audio_tokens,
+        };
+      } else {
+        log.warn(`OpenAI transcribe: usage field missing or invalid in response (${filename}) — cost will be unknown for this call`);
+      }
+    } catch (err) {
+      log.warn(`OpenAI transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
     }
 
     return [{ chunkIndex: 0, turns, usage }];

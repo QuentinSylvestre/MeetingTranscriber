@@ -201,6 +201,49 @@ describe('OpenAIProvider', () => {
     );
 
     expect(results[0].usage).toBeUndefined();
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no usage field in response'));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
+  });
+
+  // Fix 5 (review pass): the existing absence test only simulates the usage field being
+  // completely missing. This is the literal regression test for Fix 2's OpenAI half —
+  // a *present* but malformed usage object (no numeric fields) must degrade the same
+  // way, not fabricate a fully-formed-looking { inputTokens: 0, outputTokens: 0 }.
+  it('logs a warning and omits usage when usage is present but missing numeric fields', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        segments: [{ speaker: '0', start: 0.0, end: 1.0, text: 'Hi' }],
+        usage: {},
+      }),
+      text: async () => '',
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
+  });
+
+  // OpenAI's usage object is documented as polymorphic (discriminated by `type`):
+  // a "duration" usage object should never be read as a "tokens" one, even if it
+  // happens to carry numeric-looking fields under the same names.
+  it('logs a warning and omits usage when usage.type is "duration" instead of "tokens"', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        segments: [{ speaker: '0', start: 0.0, end: 1.0, text: 'Hi' }],
+        usage: { type: 'duration', input_tokens: 100, output_tokens: 20 },
+      }),
+      text: async () => '',
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
   });
 });

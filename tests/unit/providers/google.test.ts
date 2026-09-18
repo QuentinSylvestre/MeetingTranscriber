@@ -221,7 +221,66 @@ describe('GoogleProvider', () => {
     );
 
     expect(results[0].usage).toBeUndefined();
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('no usage field in response'));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
+  });
+
+  // Fix 5 / Fix 1 regression test (review pass): `input_tokens_by_modality` present but
+  // not an array must never throw a TypeError out of `.find` — it must degrade to
+  // log-and-omit like any other malformed usage shape. Before Fix 1, this threw and
+  // (per runner.ts calling saveTranscript once after the whole per-chunk loop) would
+  // have discarded every already-fetched turn in the job, not just this chunk's cost.
+  it('logs a warning and omits usage when input_tokens_by_modality is present but not an array', async () => {
+    mockUploadThenTranscribe({
+      steps: [],
+      usage: {
+        total_input_tokens: 251,
+        total_output_tokens: 0,
+        input_tokens_by_modality: { audio: 250 }, // malformed: an object, not an array
+      },
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
+  });
+
+  it('leaves audioTokens undefined (not a crash) when input_tokens_by_modality has no audio entry', async () => {
+    mockUploadThenTranscribe({
+      steps: [],
+      usage: {
+        total_input_tokens: 5,
+        total_output_tokens: 2,
+        input_tokens_by_modality: [{ modality: 'text', tokens: 5 }],
+      },
+    });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toEqual({
+      kind: 'tokens',
+      inputTokens: 5,
+      outputTokens: 2,
+      audioTokens: undefined,
+      cachedTokens: undefined,
+    });
+  });
+
+  // Fix 5 / Fix 2 regression test (review pass): a present-but-empty usage object must
+  // not fabricate a $0 cost — Google's half of the same gap OpenAI had.
+  it('logs a warning and omits usage when usage is present but missing total_input_tokens/total_output_tokens', async () => {
+    mockUploadThenTranscribe({ steps: [], usage: {} });
+
+    const results = await provider.transcribeFile(
+      '/fake/audio.mp3', { language: 'en', diarize: true }, () => {}, new AbortController().signal
+    );
+
+    expect(results[0].usage).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('usage field missing or invalid in response'));
   });
 
   it('throws when File API initiate fails', async () => {
