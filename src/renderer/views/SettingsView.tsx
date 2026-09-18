@@ -23,7 +23,7 @@ export default function SettingsView(): React.ReactElement {
   const [defaultLanguage, setDefaultLanguage] = useState<'fr' | 'en'>('fr');
   const [appLanguage, setAppLanguage] = useState<'fr' | 'en'>('fr');
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
-  const [fontSize, setFontSize] = useState<number>(18);
+  const [fontSize, setFontSize] = useState<number | null>(null);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -218,7 +218,7 @@ export default function SettingsView(): React.ReactElement {
             <select
               id="font-size-select"
               className="form-select"
-              value={fontSize}
+              value={fontSize ?? ''}
               onChange={e => void handleFontSizeChange(Number(e.target.value))}
               disabled={!prefsLoaded}
               style={{ maxWidth: 200 }}
