@@ -74,7 +74,7 @@ export default function App(): React.ReactElement {
               summaryState={summary.getState(activeJobId)} generatingJobId={summary.generatingJobId}
               onGenerateSummary={() => void summary.generate(activeJobId)}
               onOpenSummary={() => void summary.open(activeJobId)}
-              onRetrySaveSummary={() => void summary.retrySave(activeJobId)}
+              onRerenderSummary={() => void summary.rerender(activeJobId)}
               onRefreshSummary={() => void summary.refresh(activeJobId)} />
           ) : currentView === 'settings' ? (
             <SettingsView />

@@ -46,14 +46,16 @@ export interface ChunkResult {
 
 export type SummaryErrorCode = 'missing_key' | 'empty_transcript' | 'invalid_summary' |
   'refused' | 'incomplete' | 'timeout' | 'provider_error' | 'busy' | 'save_failed' |
-  'open_failed' | 'transcript_too_long' | 'bad_extension' | 'render_failed';
+  'open_failed' | 'transcript_too_long' | 'bad_extension' | 'render_failed' |
+  'persist_failed' | 'no_stored_summary';
 /** Single source of truth for the summary model id: main sends it, the UI names it. */
 export const SUMMARY_MODEL = 'gpt-5.6-sol';
 export type SummaryResult = { status: 'saved'; filePath: string } | { status: 'canceled' } |
-  // canRetrySave marks a document that was paid for and rendered but not written: it
-  // is held in memory so the user can pick another destination without paying again.
-  { status: 'error'; error: SummaryErrorCode; canRetrySave?: boolean };
-export interface SummaryStateResult { filePath: string | null; canRetrySave: boolean; busy: boolean }
+  { status: 'error'; error: SummaryErrorCode };
+// hasStoredSummary marks a job whose validated summary JSON + transcript snapshot are
+// durably persisted (job_summaries), so 'summary:rerender' can re-render/re-save its
+// docx at any time — including after a restart — without a new provider request.
+export interface SummaryStateResult { filePath: string | null; hasStoredSummary: boolean; busy: boolean }
 
 // Settings channels
 export interface IpcChannels {
@@ -232,7 +234,7 @@ export interface IpcChannels {
     request: { jobId: string };
     response: SummaryResult;
   };
-  'summary:retry-save': {
+  'summary:rerender': {
     request: { jobId: string };
     response: SummaryResult;
   };

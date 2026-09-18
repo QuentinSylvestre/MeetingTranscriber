@@ -1,39 +1,55 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_PRICING_RATES } from '../../src/shared/ipc-types';
+
+interface FakeSummaryRecord { job_id: string; summary_json: string; transcript_snapshot: string; created_at: number }
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => any>(),
-  getJob: vi.fn(), getTranscript: vi.fn(), getSpeakerMappings: vi.fn(), getSecretPlaintext: vi.fn(),
+  getJob: vi.fn(), getTranscript: vi.fn(), getSpeakerMappings: vi.fn(), getSecretPlaintext: vi.fn(), getPreference: vi.fn(),
   showSaveDialog: vi.fn(), openPath: vi.fn(), writeFile: vi.fn(), rename: vi.fn(), rm: vi.fn(),
-  generateSummary: vi.fn(), renderSummaryDocx: vi.fn(),
+  generateSummary: vi.fn(), renderSummaryDocx: vi.fn(), updateJobCost: vi.fn(),
+  saveSummaryRecord: vi.fn(), getSummaryRecord: vi.fn(),
 }));
 vi.mock('electron', () => ({ ipcMain: { handle: (name: string, fn: (...args: any[]) => any) => mocks.handlers.set(name, fn) },
   BrowserWindow: { fromWebContents: () => null }, dialog: { showSaveDialog: mocks.showSaveDialog }, shell: { openPath: mocks.openPath } }));
 vi.mock('fs', () => ({ promises: { writeFile: mocks.writeFile, rename: mocks.rename, rm: mocks.rm } }));
-vi.mock('../../src/main/db/jobs', () => ({ getJob: mocks.getJob }));
+vi.mock('../../src/main/db/jobs', () => ({ getJob: mocks.getJob, updateJobCost: mocks.updateJobCost }));
+vi.mock('../../src/main/db/summaries', () => ({ saveSummaryRecord: mocks.saveSummaryRecord, getSummaryRecord: mocks.getSummaryRecord }));
 vi.mock('../../src/main/db/transcript', () => ({ getTranscript: mocks.getTranscript, getSpeakerMappings: mocks.getSpeakerMappings }));
-vi.mock('../../src/main/settings/store', () => ({ getSecretPlaintext: mocks.getSecretPlaintext }));
+vi.mock('../../src/main/settings/store', () => ({ getSecretPlaintext: mocks.getSecretPlaintext, getPreference: mocks.getPreference }));
 vi.mock('../../src/main/summary/render-docx', () => ({ renderSummaryDocx: mocks.renderSummaryDocx }));
 vi.mock('../../src/main/summary/generate', async importOriginal => ({ ...await importOriginal<object>(), generateSummary: mocks.generateSummary }));
-import { registerSummaryHandlers } from '../../src/main/ipc/summary';
+import { pendingPersist, registerSummaryHandlers } from '../../src/main/ipc/summary';
 import { SummaryError } from '../../src/main/summary/generate';
 
 const run = () => mocks.handlers.get('summary:generate')!({ sender: {} }, { jobId: 'job' });
-const retrySave = (jobId = 'job') => mocks.handlers.get('summary:retry-save')!({ sender: {} }, { jobId });
+const rerender = (jobId = 'job') => mocks.handlers.get('summary:rerender')!({ sender: {} }, { jobId });
 const state = (jobId = 'job') => mocks.handlers.get('summary:state')!({}, { jobId });
 const open = (jobId = 'job') => mocks.handlers.get('summary:open')!({}, { jobId });
 
+// A tiny in-memory stand-in for the job_summaries table, backing the mocked
+// db/summaries module so saveSummaryRecord/getSummaryRecord round-trip realistically
+// across a test (needed for the persist-before-render and rerender-recovers tests).
+let summaryStore: Map<string, FakeSummaryRecord>;
+
 beforeEach(() => {
-  vi.resetAllMocks(); mocks.handlers.clear();
+  vi.resetAllMocks(); mocks.handlers.clear(); pendingPersist.clear();
+  summaryStore = new Map();
   mocks.getJob.mockReturnValue({ id: 'job', title: 'Conseil', status: 'done' });
   mocks.getTranscript.mockReturnValue([{ id: 'turn', job_id: 'job', speaker_label: 'Speaker 1',
     chunk_index: 0, start_ms: 65000, end_ms: 70000, text: 'Correction actuelle', original_text: 'Ancien texte' }]);
   mocks.getSpeakerMappings.mockReturnValue([{ chunk_index: 0, speaker_label: 'Speaker 1', display_name: 'Alice' }]);
   mocks.getSecretPlaintext.mockReturnValue('test-placeholder');
+  mocks.getPreference.mockReturnValue(DEFAULT_PRICING_RATES);
   mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: 'C:\\exports\\summary.docx' });
   mocks.generateSummary.mockResolvedValue({ topics: [] });
   mocks.renderSummaryDocx.mockResolvedValue(Buffer.from('docx bytes'));
   mocks.writeFile.mockResolvedValue(undefined); mocks.openPath.mockResolvedValue('');
   mocks.rename.mockResolvedValue(undefined); mocks.rm.mockResolvedValue(undefined);
+  mocks.saveSummaryRecord.mockImplementation((jobId: string, summaryJson: string, transcript: string) => {
+    summaryStore.set(jobId, { job_id: jobId, summary_json: summaryJson, transcript_snapshot: transcript, created_at: Date.now() });
+  });
+  mocks.getSummaryRecord.mockImplementation((jobId: string) => summaryStore.get(jobId) ?? null);
   registerSummaryHandlers();
 });
 
@@ -41,7 +57,8 @@ describe('summary export IPC', () => {
   it('generates from committed corrections and names, saves, then opens only the saved path', async () => {
     expect(await open()).toEqual({ opened: false });
     expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
-    expect(mocks.generateSummary).toHaveBeenCalledWith('[00:01:05] Alice: Correction actuelle', 'test-placeholder', 70000);
+    expect(mocks.generateSummary).toHaveBeenCalledWith('[00:01:05] Alice: Correction actuelle', 'test-placeholder', 70000,
+      expect.objectContaining({ onUsage: expect.any(Function) }));
     // Written to a sibling temp file first, then moved into place, so a failure
     // part-way through cannot truncate the document already at that path.
     expect(mocks.writeFile).toHaveBeenCalledWith(expect.stringContaining('.summary.docx.'), Buffer.from('docx bytes'));
@@ -87,27 +104,30 @@ describe('summary export IPC', () => {
   });
   it('reports write and open failures without claiming success', async () => {
     mocks.writeFile.mockRejectedValueOnce(new Error('private OS details'));
-    expect(await run()).toEqual({ status: 'error', error: 'save_failed', canRetrySave: true });
+    expect(await run()).toEqual({ status: 'error', error: 'save_failed' });
     expect(await open()).toEqual({ opened: false });
     await run(); mocks.openPath.mockResolvedValue('no associated app');
     expect(await open()).toEqual({ opened: false });
   });
 
-  it('keeps a paid document when the write fails and re-saves it without paying again', async () => {
+  it('keeps a persisted record when the write fails, and rerenders/re-saves it without paying again', async () => {
     mocks.writeFile.mockRejectedValueOnce(new Error('file is open in Word'));
-    expect(await run()).toEqual({ status: 'error', error: 'save_failed', canRetrySave: true });
-    expect(await state()).toEqual({ filePath: null, canRetrySave: true, busy: false });
+    expect(await run()).toEqual({ status: 'error', error: 'save_failed' });
+    // The record was already persisted (before the write was ever attempted), so the
+    // Régénérer affordance is available even though this generation's write failed.
+    expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
     expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
 
     mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: 'C:\\exports\\ailleurs.docx' });
-    expect(await retrySave()).toEqual({ status: 'saved', filePath: 'C:\\exports\\ailleurs.docx' });
-    // The rendered document was reused: no second provider request was made.
+    expect(await rerender()).toEqual({ status: 'saved', filePath: 'C:\\exports\\ailleurs.docx' });
+    // The stored record was reused: no second provider request was made.
     expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
     expect(mocks.rename).toHaveBeenCalledWith(expect.stringContaining('.tmp'), 'C:\\exports\\ailleurs.docx');
     expect(await open()).toEqual({ opened: true });
-    // Once saved it is no longer pending, so the retry affordance disappears.
-    expect(await state()).toEqual({ filePath: 'C:\\exports\\ailleurs.docx', canRetrySave: false, busy: false });
-    expect(await retrySave()).toEqual({ status: 'error', error: 'save_failed' });
+    expect(await state()).toEqual({ filePath: 'C:\\exports\\ailleurs.docx', hasStoredSummary: true, busy: false });
+
+    mocks.showSaveDialog.mockResolvedValue({ canceled: true });
+    expect(await rerender()).toEqual({ status: 'error', error: 'save_failed' });
   });
 
   it('separates a local rendering fault from a provider failure', async () => {
@@ -115,11 +135,100 @@ describe('summary export IPC', () => {
     // The request was billed, so this must not be reported as a provider problem.
     expect(await run()).toEqual({ status: 'error', error: 'render_failed' });
     expect(mocks.writeFile).not.toHaveBeenCalled();
+    // Persistence happens before rendering, so the record survives a render failure.
+    expect(mocks.saveSummaryRecord).toHaveBeenCalledTimes(1);
+    expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
   });
 
   it('cleans up the temporary file when the move into place fails', async () => {
     mocks.rename.mockRejectedValueOnce(new Error('destination locked'));
-    expect(await run()).toEqual({ status: 'error', error: 'save_failed', canRetrySave: true });
+    expect(await run()).toEqual({ status: 'error', error: 'save_failed' });
     expect(mocks.rm).toHaveBeenCalledWith(expect.stringContaining('.tmp'), { force: true });
+  });
+
+  describe('summary:rerender', () => {
+    it('returns no_stored_summary when nothing was ever persisted for this job', async () => {
+      expect(await rerender()).toEqual({ status: 'error', error: 'no_stored_summary' });
+      expect(mocks.renderSummaryDocx).not.toHaveBeenCalled();
+    });
+
+    it('reports a render failure from stored (possibly corrupt) data without touching the provider', async () => {
+      mocks.getSummaryRecord.mockReturnValue({ job_id: 'job', summary_json: JSON.stringify({ topics: [] }), transcript_snapshot: 'snap', created_at: Date.now() });
+      mocks.renderSummaryDocx.mockRejectedValueOnce(new Error('docx internals'));
+      expect(await rerender()).toEqual({ status: 'error', error: 'render_failed' });
+      expect(mocks.generateSummary).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('busy guard shared between summary:generate and summary:rerender', () => {
+    it('a concurrent rerender cannot run while a generate is in flight for the same job', async () => {
+      let finish!: (value: object) => void;
+      mocks.generateSummary.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+      const first = run();
+      await vi.waitFor(() => expect(mocks.generateSummary).toHaveBeenCalledTimes(1));
+      expect(await rerender()).toEqual({ status: 'error', error: 'busy' });
+      finish({ topics: [] }); await first;
+    });
+
+    it('a concurrent generate cannot run while a rerender is in flight for the same job', async () => {
+      mocks.getSummaryRecord.mockReturnValue({ job_id: 'job', summary_json: JSON.stringify({ topics: [] }), transcript_snapshot: 'snap', created_at: Date.now() });
+      let finishRender!: (value: Buffer) => void;
+      mocks.renderSummaryDocx.mockImplementation(() => new Promise(resolve => { finishRender = resolve; }));
+      const first = rerender();
+      await vi.waitFor(() => expect(mocks.renderSummaryDocx).toHaveBeenCalledTimes(1));
+      expect(await run()).toEqual({ status: 'error', error: 'busy' });
+      finishRender(Buffer.from('docx bytes')); await first;
+    });
+  });
+
+  describe('persist_failed and the pendingPersist recovery fallback', () => {
+    it('reports persist_failed (not provider_error) after a paid call, and rerender recovers it without a new request', async () => {
+      mocks.saveSummaryRecord.mockImplementationOnce(() => { throw new Error('disk full'); });
+      expect(await run()).toEqual({ status: 'error', error: 'persist_failed' });
+      expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
+      // Not yet durably persisted, but the session-only fallback keeps it recoverable —
+      // summary:state's hasStoredSummary reflects that.
+      expect(pendingPersist.get('job')).toEqual({ summaryJson: JSON.stringify({ topics: [] }), transcript: '[00:01:05] Alice: Correction actuelle' });
+      expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
+
+      mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: 'C:\\exports\\recovered.docx' });
+      expect(await rerender()).toEqual({ status: 'saved', filePath: 'C:\\exports\\recovered.docx' });
+      // Recovered from the in-memory fallback, not from a fresh, second paid request.
+      expect(mocks.generateSummary).toHaveBeenCalledTimes(1);
+      expect(pendingPersist.has('job')).toBe(false);
+      expect(mocks.getSummaryRecord('job')).not.toBeNull();
+    });
+  });
+
+  describe('summary cost computation', () => {
+    it('computes and accumulates the real summary cost from a well-formed usage payload across two generations', async () => {
+      mocks.generateSummary.mockImplementation(async (_t: string, _k: string, _d: number, opts: { onUsage?: (u: unknown) => void }) => {
+        opts.onUsage?.({ input_tokens: 1_000_000, output_tokens: 500_000, input_tokens_details: { cached_tokens: 0 } });
+        return { topics: [] };
+      });
+      // DEFAULT_PRICING_RATES.openaiSummary: 4.00/output... input 4.00/M, output 20.00/M.
+      // cost = 1,000,000/1e6*4.00 + 500,000/1e6*20.00 = 4 + 10 = 14
+      expect((await run()).status).toBe('saved');
+      expect(mocks.updateJobCost).toHaveBeenNthCalledWith(1, 'job', 14);
+
+      expect((await run()).status).toBe('saved');
+      expect(mocks.updateJobCost).toHaveBeenCalledTimes(2);
+      expect(mocks.updateJobCost).toHaveBeenNthCalledWith(2, 'job', 14);
+    });
+
+    it('does not update cost when the usage shape cannot be parsed', async () => {
+      mocks.generateSummary.mockImplementation(async (_t: string, _k: string, _d: number, opts: { onUsage?: (u: unknown) => void }) => {
+        opts.onUsage?.({ unexpected: 'shape' });
+        return { topics: [] };
+      });
+      expect((await run()).status).toBe('saved');
+      expect(mocks.updateJobCost).not.toHaveBeenCalled();
+    });
+
+    it('does not update cost when no usage is ever reported', async () => {
+      // Default mock never calls onUsage at all.
+      expect((await run()).status).toBe('saved');
+      expect(mocks.updateJobCost).not.toHaveBeenCalled();
+    });
   });
 });

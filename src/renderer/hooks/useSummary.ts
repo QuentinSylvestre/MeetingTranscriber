@@ -4,10 +4,12 @@ import type { SummaryErrorCode, SummaryResult, SummaryStateResult } from '../../
 export interface SummaryState {
   filePath: string | null;
   error: SummaryErrorCode | null;
-  /** A paid, rendered document is held in main and can be saved without paying again. */
-  canRetrySave: boolean;
+  /** A validated summary + transcript snapshot is durably persisted for this job, so
+   *  'summary:rerender' can rebuild and re-save its docx at any time — including
+   *  after a restart — without a new LLM call. */
+  hasStoredSummary: boolean;
 }
-const EMPTY: SummaryState = { filePath: null, error: null, canRetrySave: false };
+const EMPTY: SummaryState = { filePath: null, error: null, hasStoredSummary: false };
 
 /** Mounted by App so in-flight results survive navigation between views/jobs. */
 export function useSummary() {
@@ -18,11 +20,25 @@ export function useSummary() {
     setResults(previous => ({ ...previous, [jobId]: { ...(previous[jobId] ?? EMPTY), ...change } }));
   };
   const apply = (jobId: string, result: SummaryResult) => {
-    if (result.status === 'saved') update(jobId, { filePath: result.filePath, error: null, canRetrySave: false });
-    if (result.status === 'error') update(jobId, { error: result.error, canRetrySave: result.canRetrySave ?? false });
+    if (result.status === 'saved') update(jobId, { filePath: result.filePath, error: null });
+    if (result.status === 'error') update(jobId, { error: result.error });
   };
 
-  const run = async (jobId: string, channel: 'summary:generate' | 'summary:retry-save') => {
+  /**
+   * Recover what main already knows for this job: a durable 'hasStoredSummary' flag
+   * (survives a restart) and a session-only saved file path. A renderer reload during
+   * a generation would otherwise orphan a document that was paid for and saved.
+   */
+  const refresh = async (jobId: string) => {
+    try {
+      const state = await window.electronAPI.invoke('summary:state', { jobId }) as SummaryStateResult;
+      if (state.filePath || state.hasStoredSummary) {
+        update(jobId, { filePath: state.filePath, hasStoredSummary: state.hasStoredSummary });
+      }
+    } catch { /* main is the source of truth; absence of an answer changes nothing */ }
+  };
+
+  const run = async (jobId: string, channel: 'summary:generate' | 'summary:rerender') => {
     if (busy.current) return;
     busy.current = true;
     setGeneratingJobId(jobId);
@@ -32,24 +48,18 @@ export function useSummary() {
     try {
       apply(jobId, await window.electronAPI.invoke(channel, { jobId }) as SummaryResult);
     } catch { update(jobId, { error: 'provider_error' }); }
-    finally { busy.current = false; setGeneratingJobId(null); }
+    finally {
+      // Re-sync 'hasStoredSummary' with main's ground truth regardless of outcome: a
+      // persisted record can now exist even on a 'save_failed'/'render_failed' error
+      // (persistence happens before rendering), so the Régénérer affordance must
+      // become available immediately, not only after the next mount-time refresh.
+      await refresh(jobId);
+      busy.current = false; setGeneratingJobId(null);
+    }
   };
 
   const generate = (jobId: string) => run(jobId, 'summary:generate');
-  const retrySave = (jobId: string) => run(jobId, 'summary:retry-save');
-
-  /**
-   * Recover what main already knows for this job. A renderer reload during a
-   * generation would otherwise orphan a document that was paid for and saved.
-   */
-  const refresh = async (jobId: string) => {
-    try {
-      const state = await window.electronAPI.invoke('summary:state', { jobId }) as SummaryStateResult;
-      if (state.filePath || state.canRetrySave) {
-        update(jobId, { filePath: state.filePath, canRetrySave: state.canRetrySave });
-      }
-    } catch { /* main is the source of truth; absence of an answer changes nothing */ }
-  };
+  const rerender = (jobId: string) => run(jobId, 'summary:rerender');
 
   const open = async (jobId: string) => {
     try {
@@ -58,5 +68,5 @@ export function useSummary() {
     } catch { update(jobId, { error: 'open_failed' }); }
   };
 
-  return { getState: (jobId: string) => results[jobId] ?? EMPTY, generatingJobId, generate, retrySave, refresh, open };
+  return { getState: (jobId: string) => results[jobId] ?? EMPTY, generatingJobId, generate, rerender, refresh, open };
 }

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import AudioPlayer, { type AudioPlayerRef } from '../components/AudioPlayer';
+import Modal from '../components/Modal';
 import SpeakerTurnItem from '../components/SpeakerTurnItem';
 import { useTranscript } from '../hooks/useTranscript';
 import { useI18n } from '../hooks/useI18n';
@@ -9,15 +10,15 @@ import type { SummaryState } from '../hooks/useSummary';
 interface Props {
   jobId: string; audioPath: string; summaryState: SummaryState; generatingJobId: string | null;
   onGenerateSummary: () => void; onOpenSummary: () => void;
-  onRetrySaveSummary: () => void; onRefreshSummary: () => void;
+  onRerenderSummary: () => void; onRefreshSummary: () => void;
 }
 
-export default function TranscriptView({ jobId, audioPath, summaryState, generatingJobId, onGenerateSummary, onOpenSummary, onRetrySaveSummary, onRefreshSummary }: Props): React.ReactElement {
+export default function TranscriptView({ jobId, audioPath, summaryState, generatingJobId, onGenerateSummary, onOpenSummary, onRerenderSummary, onRefreshSummary }: Props): React.ReactElement {
   const { t } = useI18n();
   const { turns, loading, error, renameSpeaker, getDisplayName, updateTurnText, resetTranscript } = useTranscript(jobId);
   const audioPlayerRef = useRef<AudioPlayerRef>(null);
   const summarizing = generatingJobId === jobId;
-  const { error: summaryError, filePath: summaryPath, canRetrySave } = summaryState;
+  const { error: summaryError, filePath: summaryPath, hasStoredSummary } = summaryState;
 
   // Recover a document main may already hold for this job, so a renderer reload
   // during a paid generation does not orphan the result.
@@ -143,14 +144,24 @@ export default function TranscriptView({ jobId, audioPath, summaryState, generat
 
       {error && <p className="text-error text-sm mb-4">{error}</p>}
       {summaryError && <p role="alert" className="text-error text-sm mb-4">
-        {t(`summary_error_${summaryError}`)}{' '}
-        {canRetrySave && <button className="btn btn-ghost btn-sm" disabled={generatingJobId !== null}
-          onClick={onRetrySaveSummary}>{t('summary_retry_save')}</button>}
+        {t(`summary_error_${summaryError}`)}
       </p>}
-      {summarizing && <p role="status" className="text-sm mb-4">{t('summary_working')}</p>}
+      {summarizing && (
+        <Modal title={t('summary_generating')}>
+          <div className="page-subtitle">{t('summary_working')}</div>
+        </Modal>
+      )}
       {summaryPath && <div role="status" className="text-sm mb-4">
         {t('summary_saved')} <span className="selectable" style={{ overflowWrap: 'anywhere' }}>{summaryPath}</span>{' '}
         <button className="btn btn-ghost btn-sm" onClick={onOpenSummary}>{t('summary_open')}</button>
+      </div>}
+      {/* Visible any time a stored record exists, independent of summaryError/summaryPath —
+          this is what lets a regeneration happen after a restart with no new LLM call.
+          Rendered behind the same Modal backdrop as every other action button above
+          during `summarizing`, not exempted from it (closes SC-6's stated gap). */}
+      {hasStoredSummary && <div className="text-sm mb-4">
+        <button className="btn btn-ghost btn-sm" disabled={generatingJobId !== null}
+          onClick={onRerenderSummary}>{t('summary_btn_rerender')}</button>
       </div>}
 
       {/* Audio player */}

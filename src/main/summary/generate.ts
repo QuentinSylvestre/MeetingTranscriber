@@ -24,7 +24,11 @@ export function checkTranscript(transcript: string): void {
   if (transcript.length > MAX_TRANSCRIPT_CHARACTERS) throw new SummaryError('transcript_too_long');
 }
 
-/** Overrides used only by the offline evaluation harness; production passes nothing. */
+/**
+ * `model`/`onDegrade` overrides are used only by the offline evaluation harness.
+ * `onUsage` is also used in production: `ipc/summary.ts`'s `summary:generate` handler
+ * passes it to compute and persist the request's real cost.
+ */
 export interface SummaryOptions {
   model?: string;
   /** Receives each unsupported claim removed during validation. */
