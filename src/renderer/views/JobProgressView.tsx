@@ -43,6 +43,7 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
       title={t('progress_title')}
       onCancel={!done ? handleCancel : undefined}
       cancelLabel={t('progress_btn_cancel')}
+      spinner={!done && !failed}
     >
       <div className="page-subtitle">
         {done ? t('progress_subtitle_complete') : failed ? t('progress_subtitle_failed') : t('progress_subtitle_processing')}
