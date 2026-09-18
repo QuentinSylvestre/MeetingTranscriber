@@ -4,7 +4,6 @@ import log from 'electron-log';
 import { getTranscript, getSpeakerMappings } from '../db/transcript';
 import { getJob } from '../db/jobs';
 import { readPreferences } from '../settings/store';
-import { formatLine } from './format-line';
 import { renderTranscriptDocx, transcriptLines } from '../export/transcript-docx';
 
 export { formatLine } from './format-line'; // re-exported so callers don't need to know format-line directly
@@ -46,7 +45,7 @@ export function registerExportHandlers(): void {
     const { includeTimestamps } = readPreferences();
     const turns = getTranscript(jobId);
     const mappings = getSpeakerMappings(jobId);
-    const buffer = await renderTranscriptDocx(turns, mappings, includeTimestamps);
+    const buffer = await renderTranscriptDocx(job.title, turns, mappings, includeTimestamps);
     fs.writeFileSync(result.filePath, buffer);
     log.info(`Transcript exported to ${result.filePath}`);
     return { exported: true, filePath: result.filePath };

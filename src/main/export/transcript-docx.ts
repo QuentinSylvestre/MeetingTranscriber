@@ -19,18 +19,18 @@ export function transcriptLines(turns: TranscriptTurn[], mappings: SpeakerMappin
 }
 
 /**
- * Renders the transcript as a plain .docx: a single title heading followed by one
- * unstyled paragraph per line (no bold, no bullets, no tables), matching the
- * content the old .txt export produced.
+ * Renders the transcript as a plain .docx: a single title heading (the job's own
+ * title) followed by one unstyled paragraph per line (no bold, no bullets, no
+ * tables), matching the content the old .txt export produced.
  */
-export async function renderTranscriptDocx(turns: TranscriptTurn[], mappings: SpeakerMapping[], includeTimestamps: boolean): Promise<Buffer> {
+export async function renderTranscriptDocx(title: string, turns: TranscriptTurn[], mappings: SpeakerMapping[], includeTimestamps: boolean): Promise<Buffer> {
   const lines = transcriptLines(turns, mappings, includeTimestamps);
   const document = new Document({
     creator: 'Meeting Transcriber',
-    title: 'Transcript',
+    title,
     sections: [{
       children: [
-        new Paragraph({ text: 'Transcript', heading: HeadingLevel.TITLE }),
+        new Paragraph({ text: title, heading: HeadingLevel.TITLE }),
         ...lines.map(line => new Paragraph({ children: [new TextRun({ text: line })] })),
       ],
     }],
