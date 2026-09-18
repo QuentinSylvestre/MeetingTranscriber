@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useI18n } from '../hooks/useI18n';
+import Modal from '../components/Modal';
 
 interface Props {
   jobId: string;
@@ -38,23 +39,24 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <div className="page-title">{t('progress_title')}</div>
-        <div className="page-subtitle">
-          {done ? t('progress_subtitle_complete') : failed ? t('progress_subtitle_failed') : t('progress_subtitle_processing')}
-        </div>
+    <Modal
+      title={t('progress_title')}
+      onCancel={!done ? handleCancel : undefined}
+      cancelLabel={t('progress_btn_cancel')}
+    >
+      <div className="page-subtitle">
+        {done ? t('progress_subtitle_complete') : failed ? t('progress_subtitle_failed') : t('progress_subtitle_processing')}
       </div>
 
       {/* Progress bar */}
       {!done && !failed && (
-        <div className="progress-bar-track" style={{ marginBottom: 'var(--space-4)' }}>
+        <div className="progress-bar-track" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
           <div className="progress-bar-fill" />
         </div>
       )}
 
       {done && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-4)', color: 'var(--success)', fontSize: 14, fontWeight: 600 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)', color: 'var(--success)', fontSize: 14, fontWeight: 600 }}>
           {t('progress_complete_msg')}
         </div>
       )}
@@ -71,15 +73,6 @@ export default function JobProgressView({ jobId, onComplete, onCancel }: Props):
           </div>
         ))}
       </div>
-
-      {/* Cancel */}
-      {!done && (
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <button className="btn btn-ghost" onClick={handleCancel}>
-            {t('progress_btn_cancel')}
-          </button>
-        </div>
-      )}
-    </div>
+    </Modal>
   );
 }
