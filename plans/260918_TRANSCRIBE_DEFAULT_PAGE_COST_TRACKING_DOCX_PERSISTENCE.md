@@ -384,6 +384,8 @@ Added `ProviderUsage` (`{kind:'duration', seconds, modelUsed?}` / `{kind:'tokens
 
 **Open question for Phase 6, not resolved here**: does Google's `total_input_tokens` already include cached tokens (subset) or is it additive? Getting this wrong would silently double- or under-count the cached-token discount in Phase 6's cost formula, producing a wrong non-zero cost the log-and-omit safety net wouldn't catch (since a value would genuinely be present, just wrongly combined). Needs resolving against real Google billing docs or another verified call before Phase 6 finalizes its formula.
 
+All Phase 5 review-fix regression tests (code: c7d1add) are additive — no existing pre-fix assertion was weakened or removed to make the new guards pass; the one exception (AssemblyAI's old "defaults to 0" case) was replaced with the equivalent log-and-omit assertion since the underlying behavior it pinned was itself the bug being fixed.
+
 ### Phase 6: Pricing calculation module + Settings Pricing UI [QA]
 
 **Goal**: A pure cost-calculation module plus a Settings section for user-editable per-provider rates, defaulted from today's researched values. (SC-7, rates half)
