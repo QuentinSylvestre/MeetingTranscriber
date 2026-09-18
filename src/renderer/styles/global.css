@@ -60,8 +60,8 @@
   /* Font size (user preference — updated dynamically by App.tsx on mount)
      --font-size-base : content text (transcript, body copy)
      --font-size-ui   : UI chrome (buttons, inputs, labels) — set to base−1px by JS */
-  --font-size-base: 14px;
-  --font-size-ui:   13px;
+  --font-size-base: 18px;
+  --font-size-ui:   17px;
 
   /* Radii */
   --radius-sm: 4px;
