@@ -306,6 +306,42 @@ describe.skipIf(!Database)('cost tracking and summary persistence', () => {
     expect(job?.cost_usd).toBeCloseTo(0.08, 10);
   });
 
+  it('composes a prior transcription cost and a later summary cost additively, never clobbering or double-counting', async () => {
+    const { createJob, updateJobCost, getJob } = await import('../../src/main/db/jobs');
+    createJob({
+      id: 'job-cost-compose',
+      title: 'Cost Compose Test',
+      created_at: Date.now(),
+      audio_path: '/tmp/compose.mp3',
+      duration_s: 3600,
+      provider: 'assemblyai' as const,
+      model: 'universal',
+      language: 'fr' as const,
+      status: 'done' as const,
+      error_msg: null,
+      chunk_count: 1,
+    });
+
+    // Seeds a real, non-null cost_usd the way runner.ts's own updateJobCost
+    // calls would during a (partially or fully completed) transcription — this
+    // is the pre-existing spend that must survive untouched by whatever a later
+    // summary generation adds.
+    const transcriptionCost = 0.23;
+    updateJobCost('job-cost-compose', transcriptionCost);
+    expect(getJob('job-cost-compose')?.cost_usd).toBeCloseTo(transcriptionCost, 10);
+
+    // ipc/summary.ts's own updateJobCost call, made from a summary-generation
+    // flow, must add to — never replace or double-count — that prior spend.
+    // Pins the `SET cost_usd = COALESCE(cost_usd, 0) + @increment` behavior as a
+    // tested invariant rather than something only ever inspected by reading the
+    // SQL.
+    const summaryCost = 0.014;
+    updateJobCost('job-cost-compose', summaryCost);
+
+    const job = getJob('job-cost-compose');
+    expect(job?.cost_usd).toBeCloseTo(transcriptionCost + summaryCost, 10);
+  });
+
   it('saveSummaryRecord/getSummaryRecord round-trip', async () => {
     const { createJob } = await import('../../src/main/db/jobs');
     const { saveSummaryRecord, getSummaryRecord } = await import('../../src/main/db/summaries');

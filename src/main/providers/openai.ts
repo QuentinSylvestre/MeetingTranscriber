@@ -116,10 +116,10 @@ export class OpenAIProvider implements TranscriptionProvider {
           audioTokens: usageData.input_token_details?.audio_tokens,
         };
       } else {
-        log.warn(`OpenAI transcribe: usage field missing or invalid in response (${filename}) — cost will be unknown for this call`);
+        log.warn(`OpenAI transcribe: usage field missing or invalid in response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`);
       }
     } catch (err) {
-      log.warn(`OpenAI transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
+      log.warn(`OpenAI transcribe: error deriving usage from response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`, err);
     }
 
     return [{ chunkIndex: 0, turns, usage }];

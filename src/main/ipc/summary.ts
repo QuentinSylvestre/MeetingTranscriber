@@ -59,28 +59,40 @@ export const pendingPersist = new Map<string, { summaryJson: string; transcript:
  * absent usage field must never silently compute as a real, defined zero cost (mirrors
  * this project's identical rule for transcription cost).
  */
-function parseOpenAiUsage(usage: unknown): number | undefined {
-  if (typeof usage !== 'object' || usage === null) {
-    log.warn('Summary: usage field missing or not an object; cost not recorded');
+function parseOpenAiUsage(usage: unknown, jobId: string): number | undefined {
+  try {
+    if (typeof usage !== 'object' || usage === null) {
+      log.warn(`Summary: usage field missing or not an object; cost not recorded (job ${jobId})`);
+      return undefined;
+    }
+    const raw = usage as Record<string, unknown>;
+    const inputTokens = raw.input_tokens;
+    const outputTokens = raw.output_tokens;
+    if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') {
+      log.warn(`Summary: usage field missing input_tokens/output_tokens; cost not recorded (job ${jobId})`);
+      return undefined;
+    }
+    let cachedTokens: number | undefined;
+    const details = raw.input_tokens_details;
+    if (typeof details === 'object' && details !== null) {
+      const rawCached = (details as Record<string, unknown>).cached_tokens;
+      if (typeof rawCached === 'number') cachedTokens = rawCached;
+    }
+    const rates = getPreference('pricingRates');
+    const cost = calculateSummaryCost({ inputTokens, outputTokens, cachedTokens }, rates);
+    log.info(`Summary: usage input=${inputTokens} output=${outputTokens} cached=${cachedTokens ?? 0} cost=$${cost.toFixed(4)} (job ${jobId})`);
+    return cost;
+  } catch (error) {
+    // Not currently reachable (getPreference falls back safely on any read
+    // error, and calculateSummaryCost is pure arithmetic on already-type-checked
+    // numbers) — but matches the log-and-continue isolation pattern every other
+    // cost-computation call site in this project uses (provider adapters,
+    // runner.ts, updateJobCost callers), so a future change to either dependency
+    // can't silently reintroduce "local failure reported as provider_error, paid
+    // result discarded" here.
+    log.warn(`Summary: error deriving cost from usage (job ${jobId}) — cost will be unknown for this call: ${error instanceof Error ? error.message : 'unknown'}`);
     return undefined;
   }
-  const raw = usage as Record<string, unknown>;
-  const inputTokens = raw.input_tokens;
-  const outputTokens = raw.output_tokens;
-  if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') {
-    log.warn('Summary: usage field missing input_tokens/output_tokens; cost not recorded');
-    return undefined;
-  }
-  let cachedTokens: number | undefined;
-  const details = raw.input_tokens_details;
-  if (typeof details === 'object' && details !== null) {
-    const rawCached = (details as Record<string, unknown>).cached_tokens;
-    if (typeof rawCached === 'number') cachedTokens = rawCached;
-  }
-  const rates = getPreference('pricingRates');
-  const cost = calculateSummaryCost({ inputTokens, outputTokens, cachedTokens }, rates);
-  log.info(`Summary: usage input=${inputTokens} output=${outputTokens} cached=${cachedTokens ?? 0} cost=$${cost.toFixed(4)}`);
-  return cost;
 }
 
 export function registerSummaryHandlers(): void {
@@ -102,17 +114,25 @@ export function registerSummaryHandlers(): void {
     };
     const win = BrowserWindow.fromWebContents(event.sender);
     const destination = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
+    // Every branch below that reports `status: 'error'` also clears any path this
+    // job had previously saved successfully. Without this, a stale `savedPaths`
+    // entry from an earlier successful save would still be echoed back by
+    // 'summary:state' (and therefore shown by the renderer, and openable via
+    // 'summary:open') as if THIS failed attempt had actually succeeded.
     if (destination.canceled || !destination.filePath) {
+      savedPaths.delete(jobId);
       return { status: 'error', error: 'save_failed' };
     }
     // Reject an explicit non-DOCX extension rather than writing misleading bytes.
     if (path.extname(destination.filePath).toLowerCase() !== '.docx') {
+      savedPaths.delete(jobId);
       return { status: 'error', error: 'bad_extension' };
     }
     try {
       await writeAtomically(destination.filePath, buffer);
     } catch (error) {
-      log.error(`Summary: could not write the document (${error instanceof Error ? error.message : 'unknown'})`);
+      log.error(`Summary: could not write the document for job ${jobId} (${error instanceof Error ? error.message : 'unknown'})`);
+      savedPaths.delete(jobId);
       return { status: 'error', error: 'save_failed' };
     }
     savedPaths.set(jobId, destination.filePath);
@@ -141,13 +161,18 @@ export function registerSummaryHandlers(): void {
       const destination = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
       if (destination.canceled || !destination.filePath) return { status: 'canceled' };
       if (path.extname(destination.filePath).toLowerCase() !== '.docx') {
-        // Nothing has been sent yet, so this costs the user nothing.
+        // Nothing has been sent yet, so this costs the user nothing. Still clear
+        // any stale prior success path for this job: this is an 'error' result
+        // (unlike the plain 'canceled' above), so the renderer will show an
+        // error banner, and a leftover "saved: <old path>" banner shown beside it
+        // would misleadingly suggest this failed attempt actually succeeded.
+        savedPaths.delete(job.id);
         return { status: 'error', error: 'bad_extension' };
       }
       const durationMs = turns.reduce((end, turn) => Math.max(end, turn.end_ms), 0);
       let costUsd: number | undefined;
       const summary = await generateSummary(transcript, apiKey, durationMs, {
-        onUsage: usage => { costUsd = parseOpenAiUsage(usage); },
+        onUsage: usage => { costUsd = parseOpenAiUsage(usage, job.id); },
       });
       // From here the request is billed, so a local failure must never be reported as
       // a provider problem and must never discard the document that was paid for.
@@ -170,7 +195,7 @@ export function registerSummaryHandlers(): void {
         // that would misreport a local failure that has nothing to do with the
         // provider. The record was never saved, so the whole result — including any
         // computed (and any still-unapplied prior) cost — must stay recoverable.
-        log.error(`Summary: failed to persist job_summaries record: ${persistError}`);
+        log.error(`Summary: failed to persist job_summaries record for job ${job.id}: ${persistError}`);
         pendingPersist.set(job.id, { summaryJson, transcript, costUsd: combinedCost });
         return { status: 'error', error: 'persist_failed' };
       }
@@ -195,13 +220,18 @@ export function registerSummaryHandlers(): void {
       try {
         buffer = await renderSummaryDocx(summary, transcript);
       } catch (error) {
-        log.error(`Summary: rendering failed (${error instanceof Error ? error.message : 'unknown'})`);
+        log.error(`Summary: rendering failed for job ${job.id} (${error instanceof Error ? error.message : 'unknown'})`);
         throw new SummaryError('render_failed');
       }
       try {
         await writeAtomically(destination.filePath, buffer);
       } catch (error) {
-        log.error(`Summary: could not write the document (${error instanceof Error ? error.message : 'unknown'})`);
+        log.error(`Summary: could not write the document for job ${job.id} (${error instanceof Error ? error.message : 'unknown'})`);
+        // This attempt regenerated (and billed) a new summary before the write
+        // failed, so a path saved by an earlier, now-superseded attempt must not
+        // keep being echoed back as the current one — see save()'s identical
+        // comment above.
+        savedPaths.delete(job.id);
         return { status: 'error', error: 'save_failed' };
       }
       savedPaths.set(job.id, destination.filePath);
@@ -282,13 +312,18 @@ export function registerSummaryHandlers(): void {
           const summary = JSON.parse(record.summary_json) as MeetingSummary;
           buffer = await renderSummaryDocx(summary, record.transcript_snapshot);
         } catch (error) {
-          log.error(`Summary: rerender failed: ${error instanceof Error ? error.message : 'unknown'}`);
+          log.error(`Summary: rerender failed for job ${jobId}: ${error instanceof Error ? error.message : 'unknown'}`);
           return { status: 'error', error: 'render_failed' };
         }
         log.info('Summary: rerendered from stored record, no provider request');
-        return save(event, jobId, job?.title ?? 'conseil-municipal', buffer);
+        // Must be awaited, not returned bare: this call opens the native save
+        // dialog and writes the file. A bare `return save(...)` lets the `finally`
+        // below run (and `busy = false`) as soon as save() is CALLED rather than
+        // once it resolves, reopening the exact race the shared `busy` guard
+        // exists to prevent for the entire duration of the dialog + write.
+        return await save(event, jobId, job?.title ?? 'conseil-municipal', buffer);
       } catch (error) {
-        log.error(`Summary: rerender encountered an unexpected local error: ${error instanceof Error ? error.message : 'unknown'}`);
+        log.error(`Summary: rerender encountered an unexpected local error (job ${request?.jobId ?? 'unknown'}): ${error instanceof Error ? error.message : 'unknown'}`);
         return { status: 'error', error: 'rerender_failed' };
       }
     } finally { busy = false; }

@@ -120,10 +120,10 @@ export class AssemblyAIProvider implements TranscriptionProvider {
           if (typeof result.audio_duration === 'number') {
             usage = { kind: 'duration', seconds: result.audio_duration, modelUsed: result.speech_model_used };
           } else {
-            log.warn(`AssemblyAI transcribe: no audio_duration field in response (${filename}) — cost will be unknown for this call`);
+            log.warn(`AssemblyAI transcribe: no audio_duration field in response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`);
           }
         } catch (err) {
-          log.warn(`AssemblyAI transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
+          log.warn(`AssemblyAI transcribe: error deriving usage from response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`, err);
         }
         return [{ chunkIndex: 0, turns, usage }];
       }

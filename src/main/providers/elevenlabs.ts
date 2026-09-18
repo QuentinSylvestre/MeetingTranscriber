@@ -106,10 +106,10 @@ export class ElevenLabsProvider implements TranscriptionProvider {
       if (typeof result.audio_duration_secs === 'number') {
         usage = { kind: 'duration', seconds: result.audio_duration_secs };
       } else {
-        log.warn(`ElevenLabs transcribe: no audio_duration_secs field in response (${filename}) — cost will be unknown for this call`);
+        log.warn(`ElevenLabs transcribe: no audio_duration_secs field in response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`);
       }
     } catch (err) {
-      log.warn(`ElevenLabs transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
+      log.warn(`ElevenLabs transcribe: error deriving usage from response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`, err);
     }
 
     return [{ chunkIndex: 0, turns, usage }];

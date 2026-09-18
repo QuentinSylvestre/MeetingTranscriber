@@ -220,6 +220,56 @@ describe('summary export IPC', () => {
       expect(await run()).toEqual({ status: 'error', error: 'busy' });
       finishRender(Buffer.from('docx bytes')); await first;
     });
+
+    // Regression for the missing `await` on 'summary:rerender's final
+    // `return save(...)`: the test above only holds renderSummaryDocx() open, so
+    // it never exercises the save-dialog/write phase and would pass even with
+    // the bug present (a bare `return save(...)` still blocks a concurrent call
+    // that arrives before save() is even invoked). This test instead holds the
+    // save DIALOG open — the phase the bug actually reopens the race for — so it
+    // fails against the pre-fix code (busy flips back to false as soon as
+    // save() is called, not once its dialog+write finish) and passes once
+    // 'summary:rerender' does `return await save(...)`.
+    it('a concurrent generate cannot run while a rerender\u2019s save dialog is still open (Fix 1 regression)', async () => {
+      mocks.getSummaryRecord.mockReturnValue({ job_id: 'job', summary_json: JSON.stringify({ topics: [] }), transcript_snapshot: 'snap', created_at: Date.now() });
+      let finishDialog!: (value: { canceled: boolean; filePath?: string }) => void;
+      // mockImplementationOnce (not mockImplementation): only the rerender's own
+      // dialog call should hang. A concurrent generate's own dialog call, if it
+      // were ever wrongly allowed to run, must fall back to the default resolved
+      // mock rather than also hanging — otherwise a pre-fix failure would show up
+      // as a timeout instead of the intended busy-flag mismatch.
+      mocks.showSaveDialog.mockImplementationOnce(() => new Promise(resolve => { finishDialog = resolve; }));
+      const first = rerender();
+      await vi.waitFor(() => expect(mocks.showSaveDialog).toHaveBeenCalledTimes(1));
+      // The rerender's save dialog is still open here. Pre-fix, 'summary:state'
+      // already reports busy: false at this point.
+      expect((await state()).busy).toBe(true);
+      expect(await run()).toEqual({ status: 'error', error: 'busy' });
+      finishDialog({ canceled: false, filePath: 'C:\\exports\\summary.docx' });
+      await first;
+    });
+  });
+
+  describe('a later failed save must not resurface an earlier success (Fix 2 regression)', () => {
+    it('clears the stale saved path when a second generate for the same job fails to write', async () => {
+      expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      mocks.writeFile.mockRejectedValueOnce(new Error('disk full'));
+      expect(await run()).toEqual({ status: 'error', error: 'save_failed' });
+      // Before the fix, 'savedPaths' kept the FIRST generation's path forever,
+      // so 'summary:state' would still report it here — as if this second,
+      // failed (but already-billed) attempt had actually succeeded — and
+      // 'summary:open' would open that stale file instead of the truly latest,
+      // already-persisted job_summaries content.
+      expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
+      expect(await open()).toEqual({ opened: false });
+    });
+
+    it('clears the stale saved path when a rerender\u2019s save dialog is cancelled', async () => {
+      expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      mocks.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+      expect(await rerender()).toEqual({ status: 'error', error: 'save_failed' });
+      expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
+    });
   });
 
   describe('persist_failed and the pendingPersist recovery fallback', () => {

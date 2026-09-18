@@ -7,6 +7,15 @@ export interface TranscriptionOptions {
   prompt?: string;
   /** Optional speaker-count hint, currently read only by assemblyai.ts. */
   speakerCountHint?: SpeakerCountHint;
+  /**
+   * Threaded through purely for log correlation: runner.ts always has the job id
+   * available at its one transcribeFile() call site and passes it here so each
+   * adapter's usage-derivation warnings can log it alongside the chunk filename,
+   * matching the `Job ${jobId}: ...` correlator runner.ts's own cost/duration
+   * warnings already use. Optional (rather than a new required parameter) so
+   * this stays additive and doesn't ripple into every existing call site.
+   */
+  jobId?: string;
 }
 
 export interface SpeakerTurn {

@@ -119,7 +119,7 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
 
       const chunkResults = await providerAdapter.transcribeFile(
         chunkPath,
-        { language, diarize: true, speakerCountHint },
+        { language, diarize: true, speakerCountHint, jobId },
         (s) => sendProgress(`Chunk ${i + 1}: ${s}`),
         signal
       );

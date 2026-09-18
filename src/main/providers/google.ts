@@ -166,10 +166,10 @@ export class GoogleProvider implements TranscriptionProvider {
           cachedTokens: usageData.total_cached_tokens,
         };
       } else {
-        log.warn(`Google transcribe: usage field missing or invalid in response (${filename}) — cost will be unknown for this call`);
+        log.warn(`Google transcribe: usage field missing or invalid in response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`);
       }
     } catch (err) {
-      log.warn(`Google transcribe: error deriving usage from response (${filename}) — cost will be unknown for this call`, err);
+      log.warn(`Google transcribe: error deriving usage from response (${filename}${options.jobId ? `, job ${options.jobId}` : ''}) — cost will be unknown for this call`, err);
     }
 
     // Collect all word_info annotations across all steps/content blocks.
