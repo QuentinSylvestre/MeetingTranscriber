@@ -3,45 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log';
 import * as store from '../settings/store';
-import type { ProviderName, PreferenceKey, Preferences, PricingRates } from '../../shared/ipc-types';
-import { PROVIDER_NAMES } from '../../shared/ipc-types';
-
-function isFiniteNonNegative(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 0;
-}
-
-// Runtime type guard for the pricingRates preference. A malformed value here would
-// silently produce NaN/wrong displayed costs downstream rather than an obviously
-// rejected write, so this checks every leaf (finite, non-negative) and that every
-// expected sub-object is present — not just a shallow `typeof value === 'object'`.
-export function isValidPricingRates(value: unknown): value is PricingRates {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  const { assemblyai, elevenlabs, openaiTranscribe, openaiSummary, google } = v;
-  if (typeof assemblyai !== 'object' || assemblyai === null) return false;
-  if (typeof elevenlabs !== 'object' || elevenlabs === null) return false;
-  if (typeof openaiTranscribe !== 'object' || openaiTranscribe === null) return false;
-  if (typeof openaiSummary !== 'object' || openaiSummary === null) return false;
-  if (typeof google !== 'object' || google === null) return false;
-  const a = assemblyai as Record<string, unknown>;
-  const e = elevenlabs as Record<string, unknown>;
-  const ot = openaiTranscribe as Record<string, unknown>;
-  const os = openaiSummary as Record<string, unknown>;
-  const g = google as Record<string, unknown>;
-  return (
-    isFiniteNonNegative(a.universal35ProPerHourUsd) &&
-    isFiniteNonNegative(a.universal2PerHourUsd) &&
-    isFiniteNonNegative(a.diarizationPerHourUsd) &&
-    isFiniteNonNegative(e.perHourUsd) &&
-    isFiniteNonNegative(ot.inputPerMillionUsd) &&
-    isFiniteNonNegative(ot.outputPerMillionUsd) &&
-    isFiniteNonNegative(os.inputPerMillionUsd) &&
-    isFiniteNonNegative(os.outputPerMillionUsd) &&
-    isFiniteNonNegative(os.cachedInputPerMillionUsd) &&
-    isFiniteNonNegative(g.inputPerMillionUsd) &&
-    isFiniteNonNegative(g.outputPerMillionUsd)
-  );
-}
+import type { ProviderName, PreferenceKey, Preferences } from '../../shared/ipc-types';
+import { PROVIDER_NAMES, isValidPricingRates } from '../../shared/ipc-types';
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:has-secret', (_event, { key }: { key: string }) => {

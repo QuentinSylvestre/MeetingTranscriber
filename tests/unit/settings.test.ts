@@ -114,6 +114,32 @@ describe('settings/store', () => {
     expect(prefs.fontSize).toBe(18);
   });
 
+  // Fix 1 (Phase 6 review): a partial/malformed pricingRates on disk (hand-edit,
+  // corruption, or a future schema change hitting an existing user's saved file)
+  // must fall back to the full default rather than being trusted wholesale by the
+  // shallow `{...DEFAULT_PREFERENCES, ...raw}` merge — otherwise SettingsView's
+  // field getters would throw on render and calculateTranscriptionCost would
+  // silently produce NaN via undefined arithmetic.
+  it('preferences: a pricingRates object on disk missing a leaf falls back to the full default, not a crash', async () => {
+    const fs = await import('fs');
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      pricingRates: {
+        assemblyai: { universal35ProPerHourUsd: 0.21, universal2PerHourUsd: 0.15 }, // diarizationPerHourUsd omitted
+        elevenlabs: { perHourUsd: 0.22 },
+        openaiTranscribe: { inputPerMillionUsd: 2.5, outputPerMillionUsd: 10 },
+        openaiSummary: { inputPerMillionUsd: 4, outputPerMillionUsd: 20, cachedInputPerMillionUsd: 0.4 },
+        google: { inputPerMillionUsd: 2, outputPerMillionUsd: 12 },
+      },
+    }));
+    const { readPreferences } = await import('../../src/main/settings/store');
+    const { DEFAULT_PRICING_RATES, isValidPricingRates } = await import('../../src/shared/ipc-types');
+    const prefs = readPreferences();
+    expect(() => readPreferences()).not.toThrow();
+    expect(isValidPricingRates(prefs.pricingRates)).toBe(true);
+    expect(prefs.pricingRates).toEqual(DEFAULT_PRICING_RATES);
+  });
+
   // testSecret returns 'not configured' when the key exists but has no stored value.
   // Uses a real valid key name (api_key_assemblyai) so assertValidSecretKey passes;
   // existsSync returns false (default) so readSecrets() returns {} and plaintext is null.

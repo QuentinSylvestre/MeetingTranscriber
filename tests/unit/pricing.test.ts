@@ -115,38 +115,53 @@ vi.mock('../../src/main/settings/store', () => ({
   setPreference: mocks.setPreference,
 }));
 
+// isValidPricingRates moved to src/shared/ipc-types.ts (Phase 6 review, Fix 1) so it
+// can be reused from store.ts and SettingsView.tsx without an electron import; import
+// it from there rather than from src/main/ipc/settings, which now just re-uses it.
 describe('isValidPricingRates', () => {
   it('accepts DEFAULT_PRICING_RATES', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     expect(isValidPricingRates(DEFAULT_PRICING_RATES)).toBe(true);
   });
 
   it('rejects a negative number in a leaf field', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     const bad = { ...DEFAULT_PRICING_RATES, elevenlabs: { perHourUsd: -0.22 } };
     expect(isValidPricingRates(bad)).toBe(false);
   });
 
   it('rejects a non-numeric value in a leaf field', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     const bad = { ...DEFAULT_PRICING_RATES, google: { inputPerMillionUsd: 'two', outputPerMillionUsd: 12 } };
     expect(isValidPricingRates(bad)).toBe(false);
   });
 
   it('rejects a missing sub-object', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     const { assemblyai: _omit, ...bad } = DEFAULT_PRICING_RATES;
     expect(isValidPricingRates(bad)).toBe(false);
   });
 
+  // Fix 5 (Phase 6 review): a sub-object can be present (so the earlier
+  // typeof/null checks pass) but still missing one of its own leaves — e.g. a
+  // future schema addition landing on an existing user's saved preferences.json.
+  it('rejects a sub-object missing one of its own leaves', async () => {
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
+    const bad = {
+      ...DEFAULT_PRICING_RATES,
+      assemblyai: { universal35ProPerHourUsd: 0.21, universal2PerHourUsd: 0.15 }, // diarizationPerHourUsd omitted
+    };
+    expect(isValidPricingRates(bad)).toBe(false);
+  });
+
   it('rejects a non-finite number (Infinity/NaN) in a leaf field', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     expect(isValidPricingRates({ ...DEFAULT_PRICING_RATES, elevenlabs: { perHourUsd: Infinity } })).toBe(false);
     expect(isValidPricingRates({ ...DEFAULT_PRICING_RATES, elevenlabs: { perHourUsd: NaN } })).toBe(false);
   });
 
   it('rejects a non-object value', async () => {
-    const { isValidPricingRates } = await import('../../src/main/ipc/settings');
+    const { isValidPricingRates } = await import('../../src/shared/ipc-types');
     expect(isValidPricingRates(null)).toBe(false);
     expect(isValidPricingRates('0.21')).toBe(false);
     expect(isValidPricingRates(42)).toBe(false);

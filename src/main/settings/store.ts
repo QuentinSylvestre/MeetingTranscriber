@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import log from 'electron-log';
 import type { Preferences, PreferenceKey, ProviderName } from '../../shared/ipc-types';
-import { SECRET_KEY_NAMES, DEFAULT_PRICING_RATES } from '../../shared/ipc-types';
+import { SECRET_KEY_NAMES, DEFAULT_PRICING_RATES, isValidPricingRates } from '../../shared/ipc-types';
 
 // Warning: DEFAULT_PREFERENCES references app.getPath() at module initialization time.
 // This module must not be imported before app.whenReady() has been called.
@@ -104,7 +104,20 @@ export function readPreferences(): Preferences {
   if (!fs.existsSync(p)) return { ...DEFAULT_PREFERENCES };
   try {
     const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as Partial<Preferences>;
-    return { ...DEFAULT_PREFERENCES, ...raw };
+    const merged = { ...DEFAULT_PREFERENCES, ...raw };
+    // Phase 6 review fix: the shallow merge above trusts a disk-read pricingRates
+    // object wholesale. A partially-valid object (hand-edit, corruption, or a future
+    // schema change hitting an existing user's saved file) would otherwise replace
+    // DEFAULT_PRICING_RATES with something missing leaves — SettingsView's field
+    // getters would throw on render, and calculateTranscriptionCost would silently
+    // compute NaN via undefined arithmetic. Fall back to the default wholesale rather
+    // than a per-leaf deep merge: pricingRates is the only nested preference in this
+    // schema, so there is no existing deep-merge convention to match, and wholesale
+    // fallback is the simpler, more defensive choice.
+    if (!isValidPricingRates(merged.pricingRates)) {
+      merged.pricingRates = DEFAULT_PRICING_RATES;
+    }
+    return merged;
   } catch {
     log.error('Failed to parse preferences.json; using defaults');
     return { ...DEFAULT_PREFERENCES };

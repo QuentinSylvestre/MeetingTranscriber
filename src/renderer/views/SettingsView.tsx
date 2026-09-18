@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
-import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES, DEFAULT_PRICING_RATES } from '../../shared/ipc-types';
+import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES, DEFAULT_PRICING_RATES, isValidPricingRates } from '../../shared/ipc-types';
 import type { ProviderName, PricingRates } from '../../shared/ipc-types';
 import type { I18nKey } from '../i18n';
 
@@ -92,6 +92,10 @@ export default function SettingsView(): React.ReactElement {
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
   const [fontSize, setFontSize] = useState<number | null>(null);
   const [pricingRates, setPricingRatesState] = useState<PricingRates | null>(null);
+  // Fix 4 (Phase 6 review): true whenever `pricingRates` has an edit that hasn't
+  // been confirmed persisted yet (set in handlePricingFieldChange, cleared once
+  // handlePricingBlur's save resolves). Drives the beforeunload flush below.
+  const [pricingDirty, setPricingDirty] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
   // Provider descriptions — re-derive only when language changes
@@ -126,7 +130,11 @@ export default function SettingsView(): React.ReactElement {
       const appLangVal = (appLang === 'fr' || appLang === 'en') ? appLang as 'fr' | 'en' : 'fr';
       const tsVal = typeof ts === 'boolean' ? ts : true;
       const sizeVal = [14, 16, 18, 20].includes(fSize as number) ? (fSize as number) : 18;
-      const ratesVal = (rates && typeof rates === 'object') ? rates as PricingRates : DEFAULT_PRICING_RATES;
+      // Fix 1 (Phase 6 review): use the same shared validator the IPC write-path
+      // and store.ts's read-path use, instead of a loose `typeof === 'object'`
+      // check that would happily accept an object missing leaves and later throw
+      // in the field getters below.
+      const ratesVal = isValidPricingRates(rates) ? rates : DEFAULT_PRICING_RATES;
       setDefaultProvider(provVal);
       setDefaultLanguage(langVal);
       setAppLanguage(appLangVal);
@@ -204,18 +212,61 @@ export default function SettingsView(): React.ReactElement {
   // Local edits update React state immediately (so the input reflects keystrokes);
   // the whole pricingRates object is persisted as one IPC round-trip on blur, not
   // per-keystroke and not one call per leaf field.
+  //
+  // Fix 2 (Phase 6 review): two guards against a silently-wrong displayed-vs-persisted
+  // value. (a) A negative or otherwise invalid number is rejected outright — not
+  // committed to state — mirroring the existing Number.isNaN guard's style, so the
+  // input never shows a value the main-process guard (isValidPricingRates) would
+  // silently reject on blur. (b) Clearing the field (raw === '') is a normal
+  // select-all-delete-before-retyping gesture, not an intent to zero the rate — return
+  // early and keep the previous valid value in state rather than coercing to 0, so an
+  // accidental blur mid-edit can never silently persist $0 over a real rate.
   const handlePricingFieldChange = (spec: PricingFieldSpec, raw: string) => {
-    const value = raw === '' ? 0 : Number(raw);
-    if (Number.isNaN(value)) return;
+    if (raw === '') return;
+    const value = Number(raw);
+    if (Number.isNaN(value) || value < 0) return;
     setPricingRatesState(prev => spec.set(prev ?? DEFAULT_PRICING_RATES, value));
+    setPricingDirty(true);
   };
 
   const handlePricingBlur = async () => {
     if (!pricingRates) return;
     try {
       await setPreference('pricingRates', pricingRates);
+      setPricingDirty(false);
     } catch (e) { console.error('Failed to save pricingRates preference', e); }
   };
+
+  // Fix 4 (Phase 6 review): every other preference in this view saves synchronously
+  // on change/select; the pricing inputs are the only ones deferred to blur, so an
+  // edit still focused when the user quits (Alt+F4, window close) with no
+  // intervening blur would otherwise be silently lost.
+  //
+  // beforeunload fires while the renderer is still alive, before the window/webContents
+  // are torn down, so this is the last reliable point to act from the renderer side.
+  // `setPreference` (ipcRenderer.invoke under the hood) posts its request over
+  // Electron's IPC channel synchronously when called — it does not wait for a
+  // microtask or the awaited response — so firing it here (fire-and-forget, since a
+  // beforeunload handler cannot await or delay the close) reaches the main process
+  // and gets written to disk even though the renderer closes before the returned
+  // promise resolves.
+  //
+  // Reliability limit, documented rather than hidden: this only helps for a graceful
+  // window close. It cannot help against a hard process kill (Task Manager "End
+  // task", an OS crash, or `app.exit()`), which tears down the renderer without
+  // ever dispatching beforeunload — those paths lose an unblurred edit exactly as
+  // before this fix. A fully guaranteed flush would require the main process to
+  // intercept the window's close event, await an explicit "flush" round-trip from
+  // the renderer, and only then allow the close to proceed (see Electron's
+  // `will-prevent-unload`) — deliberately not done here given this data's low
+  // stakes (a re-typeable number, not transcript/job data) relative to that
+  // complexity and risk.
+  useEffect(() => {
+    if (!pricingDirty || !pricingRates) return;
+    const flush = () => { void setPreference('pricingRates', pricingRates); };
+    window.addEventListener('beforeunload', flush);
+    return () => window.removeEventListener('beforeunload', flush);
+  }, [pricingDirty, pricingRates, setPreference]);
 
   return (
     <div>

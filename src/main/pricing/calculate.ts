@@ -34,6 +34,17 @@ export function calculateTranscriptionCost(provider: ProviderName, usage: Provid
         ? (usage.inputTokens / 1e6) * rates.openaiTranscribe.inputPerMillionUsd
           + (usage.outputTokens / 1e6) * rates.openaiTranscribe.outputPerMillionUsd : 0;
     case 'google':
+      // usage.cachedTokens (when present) is intentionally not consumed here — unlike
+      // OpenAI's audioTokens above, this is not a resolved design decision but a still-
+      // open question: whether Google's total_input_tokens already includes cached
+      // tokens (in which case also applying a separate cached discount would
+      // double-count) or is additive to them (in which case omitting them here
+      // undercounts). Phase 5's review explicitly assigned resolving this to Phase 6
+      // (plan's Follow-up Work (Deferred) list, "Resolve whether Google's
+      // total_input_tokens includes or excludes cached tokens"; Phase 5 review, Domain
+      // expert finding #8) and it remains unverified — no real-world confirmation was
+      // available this pass. Do not wire a google.cachedInputPerMillionUsd rate or
+      // otherwise consume cachedTokens until that question is answered.
       return usage.kind === 'tokens'
         ? (usage.inputTokens / 1e6) * rates.google.inputPerMillionUsd
           + (usage.outputTokens / 1e6) * rates.google.outputPerMillionUsd : 0;

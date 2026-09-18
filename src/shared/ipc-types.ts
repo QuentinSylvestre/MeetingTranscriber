@@ -289,6 +289,48 @@ export const DEFAULT_PRICING_RATES: PricingRates = {
   google: { inputPerMillionUsd: 2.00, outputPerMillionUsd: 12.00 },
 };
 
+function isFiniteNonNegative(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+}
+
+// Runtime type guard for the pricingRates preference. A malformed value here would
+// silently produce NaN/wrong displayed costs downstream rather than an obviously
+// rejected write, so this checks every leaf (finite, non-negative) and that every
+// expected sub-object is present — not just a shallow `typeof value === 'object'`.
+//
+// Lives here (rather than in src/main/ipc/settings.ts, which imports `electron` and
+// can't be reused outside the main process) so both the IPC write-path guard and any
+// read-path validation (store.ts's readPreferences, SettingsView's load effect) share
+// one definition instead of drifting apart.
+export function isValidPricingRates(value: unknown): value is PricingRates {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const { assemblyai, elevenlabs, openaiTranscribe, openaiSummary, google } = v;
+  if (typeof assemblyai !== 'object' || assemblyai === null) return false;
+  if (typeof elevenlabs !== 'object' || elevenlabs === null) return false;
+  if (typeof openaiTranscribe !== 'object' || openaiTranscribe === null) return false;
+  if (typeof openaiSummary !== 'object' || openaiSummary === null) return false;
+  if (typeof google !== 'object' || google === null) return false;
+  const a = assemblyai as Record<string, unknown>;
+  const e = elevenlabs as Record<string, unknown>;
+  const ot = openaiTranscribe as Record<string, unknown>;
+  const os = openaiSummary as Record<string, unknown>;
+  const g = google as Record<string, unknown>;
+  return (
+    isFiniteNonNegative(a.universal35ProPerHourUsd) &&
+    isFiniteNonNegative(a.universal2PerHourUsd) &&
+    isFiniteNonNegative(a.diarizationPerHourUsd) &&
+    isFiniteNonNegative(e.perHourUsd) &&
+    isFiniteNonNegative(ot.inputPerMillionUsd) &&
+    isFiniteNonNegative(ot.outputPerMillionUsd) &&
+    isFiniteNonNegative(os.inputPerMillionUsd) &&
+    isFiniteNonNegative(os.outputPerMillionUsd) &&
+    isFiniteNonNegative(os.cachedInputPerMillionUsd) &&
+    isFiniteNonNegative(g.inputPerMillionUsd) &&
+    isFiniteNonNegative(g.outputPerMillionUsd)
+  );
+}
+
 export const PROVIDER_NAMES: ProviderName[] = ['assemblyai', 'elevenlabs', 'openai', 'google'];
 
 export const PROVIDER_LABELS: Record<ProviderName, string> = {
