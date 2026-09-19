@@ -114,25 +114,23 @@ export function registerSummaryHandlers(): void {
     };
     const win = BrowserWindow.fromWebContents(event.sender);
     const destination = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
-    // Every branch below that reports `status: 'error'` also clears any path this
-    // job had previously saved successfully. Without this, a stale `savedPaths`
-    // entry from an earlier successful save would still be echoed back by
-    // 'summary:state' (and therefore shown by the renderer, and openable via
-    // 'summary:open') as if THIS failed attempt had actually succeeded.
+    // `savedPaths` is cleared exactly when `job_summaries` content actually changes —
+    // never on an error/cancel branch here. This helper only ever re-renders content
+    // that is ALREADY durably persisted (the caller cleared/updated `savedPaths` itself
+    // if IT just persisted something new — see 'summary:generate' and 'summary:rerender'
+    // below); a failed or cancelled save attempt here changes nothing on disk or in the
+    // database, so any existing, still-valid saved path must be left exactly as it was.
     if (destination.canceled || !destination.filePath) {
-      savedPaths.delete(jobId);
       return { status: 'error', error: 'save_failed' };
     }
     // Reject an explicit non-DOCX extension rather than writing misleading bytes.
     if (path.extname(destination.filePath).toLowerCase() !== '.docx') {
-      savedPaths.delete(jobId);
       return { status: 'error', error: 'bad_extension' };
     }
     try {
       await writeAtomically(destination.filePath, buffer);
     } catch (error) {
       log.error(`Summary: could not write the document for job ${jobId} (${error instanceof Error ? error.message : 'unknown'})`);
-      savedPaths.delete(jobId);
       return { status: 'error', error: 'save_failed' };
     }
     savedPaths.set(jobId, destination.filePath);
@@ -161,12 +159,9 @@ export function registerSummaryHandlers(): void {
       const destination = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
       if (destination.canceled || !destination.filePath) return { status: 'canceled' };
       if (path.extname(destination.filePath).toLowerCase() !== '.docx') {
-        // Nothing has been sent yet, so this costs the user nothing. Still clear
-        // any stale prior success path for this job: this is an 'error' result
-        // (unlike the plain 'canceled' above), so the renderer will show an
-        // error banner, and a leftover "saved: <old path>" banner shown beside it
-        // would misleadingly suggest this failed attempt actually succeeded.
-        savedPaths.delete(job.id);
+        // Nothing has been sent yet, and no `job_summaries` content has changed, so
+        // an existing, still-valid saved path from an earlier generation must be
+        // left untouched — see the invariant note above `saveSummaryRecord` below.
         return { status: 'error', error: 'bad_extension' };
       }
       const durationMs = turns.reduce((end, turn) => Math.max(end, turn.end_ms), 0);
@@ -186,8 +181,15 @@ export function registerSummaryHandlers(): void {
       // either way rather than silently dropped by the .delete()/.set() below.
       const priorPendingCost = pendingPersist.get(job.id)?.costUsd;
       const combinedCost = priorPendingCost !== undefined ? (costUsd ?? 0) + priorPendingCost : costUsd;
+      // Invariant: `savedPaths` is cleared exactly when `job_summaries` content
+      // actually changes — here, not on any later error branch. A prior successful
+      // save's path is now stale the instant a NEW summary is durably persisted for
+      // this job, regardless of whether the render/write below succeeds, fails, or
+      // is never reached; and if persistence itself fails, nothing changed, so the
+      // prior path must be left alone (see the `persist_failed` catch below).
       try {
         saveSummaryRecord(job.id, summaryJson, transcript);
+        savedPaths.delete(job.id);
       } catch (persistError) {
         // Deliberately its own try/catch, separate from updateJobCost and the
         // render/write logic below: an uncaught throw here must never fall into this
@@ -227,11 +229,10 @@ export function registerSummaryHandlers(): void {
         await writeAtomically(destination.filePath, buffer);
       } catch (error) {
         log.error(`Summary: could not write the document for job ${job.id} (${error instanceof Error ? error.message : 'unknown'})`);
-        // This attempt regenerated (and billed) a new summary before the write
-        // failed, so a path saved by an earlier, now-superseded attempt must not
-        // keep being echoed back as the current one — see save()'s identical
-        // comment above.
-        savedPaths.delete(job.id);
+        // No `savedPaths.delete` needed here: the clear already happened right after
+        // `saveSummaryRecord` succeeded above, and that clear fires regardless of
+        // whether rendering/writing succeeds — including the `render_failed` throw
+        // below, which reaches the outer catch without ever passing through this line.
         return { status: 'error', error: 'save_failed' };
       }
       savedPaths.set(job.id, destination.filePath);
@@ -275,6 +276,10 @@ export function registerSummaryHandlers(): void {
             // latest is retained") — correct here even when a record already exists.
             saveSummaryRecord(jobId, pending.summaryJson, pending.transcript);
             record = getSummaryRecord(jobId);
+            // Same invariant as 'summary:generate': a prior saved path is stale the
+            // instant NEW content is durably persisted for this job, independent of
+            // whether the render/save below (which follows this block) succeeds.
+            savedPaths.delete(jobId);
           } catch (retryError) {
             // The paid result is still sitting in pendingPersist (left untouched
             // here — never cleared on this failure path), so this must not fall

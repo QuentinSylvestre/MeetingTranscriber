@@ -250,24 +250,58 @@ describe('summary export IPC', () => {
     });
   });
 
-  describe('a later failed save must not resurface an earlier success (Fix 2 regression)', () => {
-    it('clears the stale saved path when a second generate for the same job fails to write', async () => {
+  describe('savedPaths is cleared exactly when job_summaries content actually changes', () => {
+    it('clears the stale saved path when a second generate persists new content but then fails to write', async () => {
       expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
       mocks.writeFile.mockRejectedValueOnce(new Error('disk full'));
       expect(await run()).toEqual({ status: 'error', error: 'save_failed' });
-      // Before the fix, 'savedPaths' kept the FIRST generation's path forever,
-      // so 'summary:state' would still report it here — as if this second,
-      // failed (but already-billed) attempt had actually succeeded — and
-      // 'summary:open' would open that stale file instead of the truly latest,
-      // already-persisted job_summaries content.
+      // The second generation's summary WAS durably persisted (before the write was
+      // even attempted), so the first generation's saved path is now stale — 'summary:
+      // state' must not still report it as if this failed, already-billed attempt had
+      // actually succeeded, and 'summary:open' must not open that stale file instead
+      // of the truly latest, already-persisted job_summaries content.
       expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
       expect(await open()).toEqual({ opened: false });
     });
 
-    it('clears the stale saved path when a rerender\u2019s save dialog is cancelled', async () => {
+    it('clears the stale saved path when a persisted new generation subsequently fails to render', async () => {
+      expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      mocks.renderSummaryDocx.mockRejectedValueOnce(new Error('docx render crashed'));
+      expect(await run()).toEqual({ status: 'error', error: 'render_failed' });
+      // Same invariant as the write-failure case above, but this failure path exits
+      // via a `throw` straight to the handler's outer catch, never passing through
+      // any of the `return {status:'error',...}` lines a naive per-branch fix would
+      // have attached the clear to — regression coverage for exactly that gap.
+      expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
+    });
+
+    it('does NOT erase a still-valid saved path when a rerender of unchanged content is cancelled', async () => {
       expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
       mocks.showSaveDialog.mockResolvedValueOnce({ canceled: true });
       expect(await rerender()).toEqual({ status: 'error', error: 'save_failed' });
+      // Rerendering an already-persisted, UNCHANGED record and then cancelling the
+      // save dialog changes nothing on disk or in the database — the original
+      // generation's saved path is exactly as valid as it was before this attempt,
+      // and must not be silently forgotten just because this copy wasn't saved.
+      expect(await state()).toEqual({ filePath: 'C:\\exports\\summary.docx', hasStoredSummary: true, busy: false });
+    });
+
+    it('clears a stale saved path when rerender\u2019s pendingPersist fallback durably persists newer content', async () => {
+      expect(await run()).toEqual({ status: 'saved', filePath: 'C:\\exports\\summary.docx' });
+      mocks.saveSummaryRecord.mockImplementationOnce(() => { throw new Error('disk full'); });
+      mocks.generateSummary.mockResolvedValueOnce({ topics: ['new content'] });
+      expect(await run()).toEqual({ status: 'error', error: 'persist_failed' });
+      // The durable record is still the FIRST generation's — the second, newer paid
+      // generation only exists in pendingPersist so far — so the first generation's
+      // saved path must still be reported as valid.
+      expect(await state()).toEqual({ filePath: 'C:\\exports\\summary.docx', hasStoredSummary: true, busy: false });
+      mocks.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+      expect(await rerender()).toEqual({ status: 'error', error: 'save_failed' });
+      // rerender's own pendingPersist fallback just durably replaced the first
+      // generation's record with the second's — the first generation's saved path is
+      // now stale for a reason entirely separate from this rerender's own cancelled
+      // save dialog, and must be cleared even though that dialog step, on its own,
+      // would not have cleared anything (see the test above).
       expect(await state()).toEqual({ filePath: null, hasStoredSummary: true, busy: false });
     });
   });
