@@ -1,6 +1,6 @@
 {
   "name": "meeting-transcriber",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Windows desktop app for meeting transcription with speaker diarization",
   "main": "dist-electron/index.js",
   "author": "",
