@@ -23,3 +23,9 @@ jobs:
       - run: npm run build -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # electron-builder can race and create duplicate draft releases for the same tag
+      # (see scripts/finalize-github-release.cjs) — clean that up and publish the result.
+      - run: node scripts/finalize-github-release.cjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
