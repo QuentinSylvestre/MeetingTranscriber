@@ -1,9 +1,28 @@
 # Transcribe-default page, TranscriptView UX revamp, exact cost tracking, and docx persistence
 
 > **Date**: 2026-09-18
-> **Status**: In Progress — all 8 phases, Step 9 final review/fixes across both cycles (code: 7bb9a39, bbbc529, ca580d0), and Step 9b exhaustive live QA are done; 3 exit criteria remain open (externally blocked or explicitly scope-narrowed — see Progress Tracker and Follow-up Work)
+> **Status**: In Progress — all 8 phases, Step 9 final review/fixes across both cycles (code: 7bb9a39, bbbc529, ca580d0), and Step 9b exhaustive live QA are done; 3 exit criteria remain open (externally blocked or explicitly scope-narrowed — see Progress Tracker and Follow-up Work). Archived as a deliberate partial handoff — see Completion Summary below.
+> **Last Updated**: 2026-09-19 09:32
 > **Scope**: Six related UX/feature changes to the meeting_transcriber Electron app: default page + rename, TranscriptView button revamp (including .txt→.docx export), default text size, a processing modal, exact per-request cost tracking (transcription + summary), and persisting the compte-rendu JSON so its docx can be re-rendered without re-calling the LLM.
 > **Estimated effort**: ~1-2 weeks
+
+---
+
+## Completion Summary
+
+Archived as a **deliberate partial handoff**, per explicit user decision at `/qclose` (2026-09-19): all 8 implementation phases plus the Step 9 final holistic review (both review cycles) and Step 9b exhaustive live QA are complete, but 3 exit criteria remain honestly unticked — Phase 5's ElevenLabs and OpenAI real-call transcription verification, and Phase 7's real multi-chunk cost verification for Google/ElevenLabs/OpenAI. All three are externally blocked (OpenAI: no project model access, confirmed `HTTP 403`; ElevenLabs: request-shape mismatch in the one verification attempt made) or explicitly scope-narrowed by the user's own decisions this session (an "AssemblyAI only" real-call focus for Phase 7). None require code changes to resolve — see Follow-up Work items 5 and 6 for what would unblock them.
+
+### Acknowledged at archival
+
+Cleanup scan (Step 2) found zero unresolved Pass 1 items (review findings, TODO/FIXME, documented divergences, documentation gaps) — see Follow-up Work (Deferred) for the plan's own already-tracked, already-decided deferrals, surfaced to the user in full at archival. Pass 3 (legacy REVISIT markers) found none. Pass 4 (documentation-ripple sweep) found zero stale references beyond what the Documentation Updates table already covers.
+
+Pass 2 (Harness Improvement Opportunities) — 14 items, each individually decided (no bulk approval):
+
+- **Promoted**: Electron CDP QA technique (`shared/skills/qbrowser-test/SKILL.md` gained an "Electron apps (non-Playwright fallback)" section; `shared/skills/qqa/SKILL.md`'s Surface taxonomy cross-references it) and the native-OS-dialog-bypass-via-IPC-bridge technique (folded into the same section) — committed to the shared playbook repository via `/qconfig-sync`, not this project's history.
+- **Promoted**: live-migration-during-dev safety note — added to this project's own `AGENTS.md` as a new "Development Safety" section (user explicitly scoped this to project-level, not shared governance).
+- **Promoted**: the `npm_config_script_shell` workaround (which turned out to NOT already be documented despite being referenced as such throughout this plan), the manual `better-sqlite3` rebuild step, and the `prebuild-install/bin.js` direct-invocation fallback — all added to this project's own `AGENTS.md` Test Execution section.
+- **Accepted (harness opportunity)**: cycle-cap "diff-only cycle-2" middle ground; the orchestrator-always-commits mitigation for the recurring `Claude-Session` trailer problem; the false-negative CDP-capability-claim anti-pattern; the fresh-install `--user-data-dir` verification technique; the qvalidate commit-pairing regex rationale (user declined to promote a one-line addition); the duplicate Phase-7 PATH diagnosis (possible AGENTS.md-adherence gap); the ≤25-word review-table cell cap violated across all 8 already-committed per-phase Review Log entries this session (not retroactively fixed — out of scope); the compaction-loses-batched-findings write-timing observation.
+- **Skipped (harness opportunity)**: the machine-specific `PATH`-length root cause — not portable governance (specific to this Windows account), and a working workaround is already documented.
 
 ---
 
