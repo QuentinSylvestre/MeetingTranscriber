@@ -4,7 +4,7 @@
   "description": "Windows desktop app for meeting transcription with speaker diarization",
   "main": "dist-electron/index.js",
   "author": "",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
     "dev": "node scripts/rebuild-native.cjs && vite",
