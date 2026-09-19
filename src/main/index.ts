@@ -5,6 +5,7 @@ import { registerAllHandlers } from './ipc/index';
 import { registerAppScheme, registerAppProtocol } from './ipc/protocol';
 import { closeDb } from './db/index';
 import { registerLifecycleHandlers } from './app-lifecycle';
+import { initAutoUpdater } from './updater';
 
 // Logger declared at module scope but initialized after app is ready (F9)
 let log: ReturnType<typeof initLogger>;
@@ -61,7 +62,9 @@ if (!gotLock) {
     log.info('App ready, creating window');
     createWindow();
     // Wire close guards after window creation so the getter returns the live window
-    registerLifecycleHandlers(() => BrowserWindow.getAllWindows()[0] ?? null);
+    const getMainWindow = () => BrowserWindow.getAllWindows()[0] ?? null;
+    registerLifecycleHandlers(getMainWindow);
+    initAutoUpdater(getMainWindow);
     // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
