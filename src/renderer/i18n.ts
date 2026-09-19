@@ -115,7 +115,6 @@ export const en = {
   provider_desc_google: 'Gemini 3.5 Transcribe · Chunks ≤30min (preview)',
   // HistoryView
   rename_job_error: 'Failed to rename. Please try again.',
-  transcription_start_error: 'Transcription failed to start. Please try again.',
   history_title: 'History',
   history_subtitle_jobs: 'transcription job',
   history_subtitle_jobs_plural: 'transcription jobs',
@@ -283,7 +282,6 @@ export const fr: Record<I18nKey, string> = {
   provider_desc_openai: 'gpt-4o-transcribe-diarize · Découpage ≤25min',
   provider_desc_google: 'Gemini 3.5 Transcribe · Découpage ≤30min (aperçu)',
   rename_job_error: 'Impossible de renommer. Veuillez réessayer.',
-  transcription_start_error: 'La transcription n\'a pas pu démarrer. Veuillez réessayer.',
   history_title: 'Historique',
   history_subtitle_jobs: 'tâche de transcription',
   history_subtitle_jobs_plural: 'tâches de transcription',

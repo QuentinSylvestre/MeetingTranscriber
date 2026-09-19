@@ -110,21 +110,31 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
     const jobId = currentJobId;
     setCurrentJobId(null);
     if (!jobId || !audioPath) return;
-    try {
-      await window.electronAPI.invoke('transcription:start-job', {
-        jobId,
-        title: t('record_default_title').replace('{{date}}', new Date().toLocaleString()),
-        audioPath,
-        provider: selectedProvider,
-        model: 'universal',
-        language: selectedLanguage,
-        speakerCountHint: hint,
-      });
-      onJobStarted?.(jobId, audioPath);
-    } catch (err) {
+
+    // Navigate to progress view BEFORE starting the job so JobProgressView is
+    // mounted and its transcription:progress listener is registered before the
+    // runner fires any events (mirrors UploadView.tsx's handleTranscribe).
+    // transcription:start-job's IPC handler doesn't resolve until the whole job
+    // finishes, so awaiting it here before navigating — as this used to — showed
+    // the progress view only once the job was already done, missing every push
+    // event including 'Done' and leaving it stuck on its initial placeholder line.
+    onJobStarted?.(jobId, audioPath);
+    // Wait for React to flush the navigation re-render and JobProgressView to mount
+    // its transcription:progress listener before the runner starts firing events.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+    // Fire and forget — errors are surfaced via transcription:progress 'Error:' event.
+    void window.electronAPI.invoke('transcription:start-job', {
+      jobId,
+      title: t('record_default_title').replace('{{date}}', new Date().toLocaleString()),
+      audioPath,
+      provider: selectedProvider,
+      model: 'universal',
+      language: selectedLanguage,
+      speakerCountHint: hint,
+    }).catch((err) => {
       console.error('Failed to start transcription job:', err);
-      setError(t('transcription_start_error'));
-    }
+    });
   };
 
   const isIdle = status === 'idle';
