@@ -11,3 +11,8 @@ dist-main/
 # One-off summary evaluation harness output (paid model runs)
 scripts/.eval-output/
 dist-eval/
+
+# Real municipal-council transcript/summary used as a golden test fixture — kept
+# locally, not committed. See todo.md.
+tests/fixtures/municipal-summary/golden-transcript.txt
+tests/fixtures/municipal-summary/golden-summary.json
