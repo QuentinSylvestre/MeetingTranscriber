@@ -193,12 +193,23 @@ Tests: not run (no public code change in this phase). QA: SKIP (no `[QA]` annota
 > **Rejected:** wrapping the dynamic import in `try/catch` and skipping on error — it turns a broken private module into a silent skip. **Use instead:** skip only when `privateDir()` returns `null`.
 
 **Exit criteria**:
-- [ ] `npm test` with the sibling present: `Test Files 18 passed (18)`.
-- [ ] `npm test` with `MT_PRIVATE_FIXTURES` pointing to an empty scratch dir fails in `summary-golden.test.ts` with the resolver's error. With the variable unset and the sibling temporarily renamed: `17 passed | 1 skipped (18)`. The sibling is renamed back afterwards.
-- [ ] Mutation check: change one expected title in the private module, and `npm test` fails in `summary-golden.test.ts`. Revert.
-- [ ] `node --check scripts/summary-eval.cjs` passes, and `grep -n "tests', 'fixtures'" scripts/summary-eval.cjs` returns nothing.
-- [ ] `grep -n -i -F -f terms-literal.txt` and `grep -n -i -E -f terms-regex.txt` on the four files in File scope return nothing.
-- [ ] Commit locally (no push until Phase 5): `feat(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 2 — load golden test from private repo`. No progress commit carrying a SHA.
+- [x] `npm test` with the sibling present: `Test Files 18 passed (18)`.
+- [x] `npm test` with `MT_PRIVATE_FIXTURES` pointing to an empty scratch dir fails in `summary-golden.test.ts` with the resolver's error. With the variable unset and the sibling temporarily renamed: `17 passed | 1 skipped (18)`. The sibling is renamed back afterwards.
+- [x] Mutation check: change one expected title in the private module, and `npm test` fails in `summary-golden.test.ts`. Revert.
+- [x] `node --check scripts/summary-eval.cjs` passes, and `grep -n "tests', 'fixtures'" scripts/summary-eval.cjs` returns nothing.
+- [x] `grep -n -i -F -f terms-literal.txt` and `grep -n -i -E -f terms-regex.txt` on the four files in File scope return nothing.
+- [x] Commit locally (no push until Phase 5): `feat(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 2 — load golden test from private repo`. No progress commit carrying a SHA.
+
+Implementation (2026-09-25, code: SHAs withheld until the rewrite, per the public-file rule)
+Phase 2 turns the golden summary test into a stub with no private data. It loads the real test from the private sibling repo. A new resolver, `scripts/private-fixtures.cjs`, exports `privateDir()`. When `MT_PRIVATE_FIXTURES` is set, it returns that directory, and it throws if the directory lies inside the public repo or lacks the private test module. The error message never includes the path. When the variable is unset, it returns the sibling `../meeting_transcriber-private` if that folder exists, and null otherwise. The stub skips only when the resolver returns null. It imports the private module without a try/catch, so a broken private module fails the file and cannot show up as a skip. `vitest.config.ts` gains an `@src` alias so the private module can import the summary sources. `scripts/summary-eval.cjs` now reads the transcript through the same resolver. If the resolver throws or finds nothing, the script exits with a clear message before any key is read. Its header comment names the new source. Verification: with the sibling present, `npm test` gives Test Files 18 passed (18). With the variable pointing at an empty directory, the golden stub fails with the resolver error. With the sibling absent, the result is 17 passed | 1 skipped (18). Changing one expected title in the private module makes the golden stub fail, and the module was restored afterwards. `node --check` passes on the eval script, which was not run. Both private term files return zero hits on the four changed files. The code was committed locally with the Phase 2 subject and not pushed. The six Phase 2 exit criteria are ticked in the project file, which is left unstaged.
+
+Review fixes (2026-09-25, `fix` commit)
+The review fixes harden the private-dir resolver in `scripts/private-fixtures.cjs`. An empty `MT_PRIVATE_FIXTURES` now counts as set and throws an error that names the variable. A relative value resolves against the public repo root, not the current directory. The inside-repo guard now compares real paths, so junctions and short names cannot bypass it. It also classifies a child folder whose name starts with two dots as inside the repo. When the variable is unset and the sibling folder exists but lacks the private test module, the resolver throws a path-free "found but incomplete" error instead of returning the folder. The header comment describes each rule. Verification: with the sibling present, `npm test` gives Test Files 18 passed (18). An empty scratch directory gives 1 failed in the golden stub. With the sibling absent, the result is 17 passed | 1 skipped (18). Node probes confirm each fixed case, and both private term files return zero hits on the four Phase 2 files. The fix was committed locally as a separate commit and not pushed. The Phase 2 ticks in the project file are unchanged.
+
+Resolver test (2026-09-25, `test` commit, user decision)
+A new test file, `tests/unit/private-fixtures.test.ts`, covers the private-dir resolver when `MT_PRIVATE_FIXTURES` is set. An empty variable throws, and the message names the variable. A temp directory without the private test module throws, and the message contains neither the temp path nor its real path. A relative value naming a folder inside the public repo throws the inside-repo error, and the message does not contain the repo root. A temp directory holding the private test module is returned, compared by real path. Each test saves and restores the variable and deletes its temp directories. The unset and sibling branch is not tested, because it depends on the machine; the golden stub covers it. The suite is now 19 files. With the sibling present it reports Test Files 19 passed (19), and without it 18 passed | 1 skipped (19). Both private term files return zero hits on the new file. The test was committed locally as a separate commit and not pushed. AGENTS.md is unchanged; its file count is updated in Phase 3. The Phase 2 ticks are unchanged.
+
+Tests: pass (19 of 19 files after the resolver test). QA (`[QA]`, library surface, orchestrator-run): PASS. The resolver was called directly: sibling present returns the private dir; an empty dir, a missing path, and a path inside the repo (including a case-changed one) throw a path-free error naming the variable; a relative valid path resolves. The golden stub run alone passed 10 tests with the sibling present and failed with the resolver error when misconfigured. Observation: an empty variable fell back to the sibling; fixed by review finding 1.
 
 ### Phase 3: Scrub HEAD and update docs
 **Goal**: The working tree at `HEAD` contains no private term, and docs reflect the new layout, before any history is touched.
@@ -332,6 +343,9 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 1: plain `grep` in Git Bash needs `LC_ALL=C.UTF-8` to use the term files (non-ASCII patterns with `-i -F`). `git grep` is unaffected. Later phases set the locale.
 - Phase 1: a few generic French test sentences overlapping the fixture wording, and (user decision 2026-09-25) two paraphrased agenda items in `summary-render.test.ts`, are kept and listed in the private README's keep-list.
 - Phase 1: the fixture blob ids were added to the literal term list as a guard (full 40-character ids only). No `src/` rule exists, so no `src-rules-for-review` file was created.
+- Phase 2: the stub uses a plain named ESM import of the `.cjs` resolver; the `createRequire` fallback was not needed. `summary-eval.cjs` exits with a new code 4 when the resolver throws or returns null, before the key is read.
+- Phase 2: the resolver contract was tightened after review. An empty `MT_PRIVATE_FIXTURES` is an error, a relative value resolves against the repo root, the inside-repo guard compares real paths, and an existing sibling without the private module throws a path-free error instead of returning the folder.
+- Phase 2: at the user's request (2026-09-25, review finding 6), a new test file `tests/unit/private-fixtures.test.ts` covers the resolver's set-variable branches. **The suite is now 19 files.** Every later "18 files" expectation in this plan reads as 19: `Test Files 19 passed (19)` with the sibling present, `18 passed | 1 skipped (19)` without it. Phase 3 updates the `AGENTS.md` count to 19.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
@@ -396,9 +410,26 @@ Implementation health: Green.
 
 Reviewer independently simulated the rewrite over every reachable blob, message and tag: zero residual term hits, and no `src/` path touched. qvalidate phase-count passed (8 of 8). Cycle 2 skipped under the user's 1-cycle cap.
 
+### 2026-09-25 -- Implementation Review (after Phase 2, persona: Senior engineer)
+
+Implementation health: Green.
+6 findings (0 High, 0 Medium, 5 Low, 1 Info).
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Low | An empty `MT_PRIVATE_FIXTURES` counted as unset and fell back to the sibling, against the "set means strict" contract. | Fixed -- an empty value now throws a path-free error naming the variable. |
+| 2 | Low | `isInside` treated a child folder whose name starts with two dots as outside the repo. | Fixed -- only `..` or a `..`-plus-separator prefix counts as outside. |
+| 3 | Low | The inside-repo guard compared typed paths, so junctions, subst drives or short names could bypass it. | Fixed -- both sides compared by real path when the path exists. |
+| 4 | Low | A relative `MT_PRIVATE_FIXTURES` resolved against the current directory, which differs between vitest and Electron. | Fixed -- relative values resolve against the public repo root. |
+| 5 | Low | A sibling folder without the private module surfaced a loader error that prints an absolute path. | Fixed -- the resolver throws a path-free "found but incomplete" error. |
+| 6 | Info | The resolver's throw paths had no automated test, only manual exit-criteria runs. | User: accepted -- user chose "Add a test file" on 2026-09-25; `tests/unit/private-fixtures.test.ts` added. |
+
+The fixes touch a validation gate, which normally forces a Full-effort cycle-2 review; cycle 2 was skipped under the user's 1-cycle cap, and the implementer re-ran every Phase 2 exit check plus per-case probes instead. The Step 9 final review covers the resolver again.
+
 ## Harness Improvement Opportunities
 
 - `/qexplore` Step 1.5 has no trio for data-sweep or privacy-audit tasks. The mutation-finder brief had nothing to trace here, so the orchestrator swapped in a privacy-sweep agent. — cost: an off-script judgment call and a deviation recorded by hand — suggested change: add an optional "content-sweep" brief variant for tasks whose subject is data present in the tree or history rather than code flow.
 - `/qexplore` writes project files to `plans/` without considering repo visibility. In a public repo, an exploration about private data can leak that data through its own intent file. — cost: the orchestrator had to invent a public-file rule mid-session — suggested change: add a Step 3 check: "if the repo is public and the subject is sensitive, write no sensitive literals; keep them in a private location."
 - Council eligibility versus engaged-conversation opt-in is ambiguous for trade-off questions in `/qexplore`. `shared/AGENTS.md` says to invoke council before escalating, but the qcouncil opt-in table makes `/qexplore` opt-in, and only for oscillation. — cost: unclear whether Q1 should have been council-gated; it was offered as opt-in — suggested change: state explicitly whether `/qexplore` trade-off questions (not only oscillation) run council silently or offer it.
 - `/qplan` requires phase-level code snippets and file:line citations, but this plan's most important content (the term list, replacement strings, blob ids) cannot appear in the plan at all, because the plan is public. — cost: the plan points to private-repo files instead of stating them, so reviewers cannot audit the actual rules — suggested change: let a plan declare an out-of-band artifact location for sensitive contract details, and have reviewers be told it exists.
+- `/qdev` Step 7 expects `code: <sha>` in implementation notes and plan commits, but this plan's public-file rule bans pre-rewrite SHAs in the file during Phases 1-4. — cost: an ad-hoc "SHAs withheld" marker in notes and commit subjects — suggested change: let a plan declare "no SHAs until phase N" and have `/qdev` substitute a fixed placeholder that `commit-pairing` accepts.
