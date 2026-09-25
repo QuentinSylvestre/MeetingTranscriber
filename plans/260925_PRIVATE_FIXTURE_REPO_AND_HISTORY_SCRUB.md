@@ -223,13 +223,22 @@ Tests: pass (19 of 19 files after the resolver test). QA (`[QA]`, library surfac
 5. `AGENTS.md` `### Test Execution`: **propose this edit to the user and apply it only on approval** (governance text). Proposed addition after the "18 files" paragraph: "The golden summary test (`tests/unit/summary-golden.test.ts`) is a stub. It runs the real-data test from the private repo cloned as `../meeting_transcriber-private` (override: `MT_PRIVATE_FIXTURES`), and shows as 1 skipped file when that clone is absent. A set `MT_PRIVATE_FIXTURES` without the private module is an error. Never commit real meeting data, names, quotes, or recording details to this repo, including `plans/` and `memory/`; check new plan and memory text against the private repo's `scrub/` term files before pushing."
 
 **Exit criteria**:
-- [ ] `git grep -n -i -F -f terms-literal.txt HEAD` and `git grep -n -i -E -f terms-regex.txt HEAD` return zero hits. Canary: copy one tracked file to an untracked scratch path, add one known term, confirm the same grep pointed at the scratch file reports it, then delete it.
-- [ ] `npm test`: `Test Files 18 passed (18)` with the sibling present.
-- [ ] `README.md` golden-test paragraph updated, with no reference to fixtures in this repo.
-- [ ] `todo.md` deleted.
-- [ ] `.gitignore` comment reworded with no `todo.md` pointer, and the ignore lines kept.
-- [ ] `AGENTS.md` Test Execution note applied with user approval, or recorded as declined in §9.
-- [ ] Commit locally (no push until Phase 5): `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 3 — scrub HEAD and update docs`.
+- [x] `git grep -n -i -F -f terms-literal.txt HEAD` and `git grep -n -i -E -f terms-regex.txt HEAD` return zero hits. Canary: copy one tracked file to an untracked scratch path, add one known term, confirm the same grep pointed at the scratch file reports it, then delete it.
+- [x] `npm test`: `Test Files 18 passed (18)` with the sibling present.
+- [x] `README.md` golden-test paragraph updated, with no reference to fixtures in this repo.
+- [x] `todo.md` deleted.
+- [x] `.gitignore` comment reworded with no `todo.md` pointer, and the ignore lines kept.
+- [x] `AGENTS.md` Test Execution note applied with user approval, or recorded as declined in §9.
+- [x] Commit locally (no push until Phase 5): `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 3 — scrub HEAD and update docs`.
+
+Implementation (2026-09-25, code: SHAs withheld until the rewrite, per the public-file rule)
+Phase 3 scrubbed the public repo's HEAD and updated the docs, as one local commit (not pushed). A scratch script outside the repo applied the private replacement rules to every tracked file, as byte-literal replacements in rule order. Of the 12 rules, 11 matched in HEAD, making 14 substitutions across 3 files: two archived plans and one unit test. No `src/` path was touched. Line endings were preserved, and the diff contains only the intended strings. The README golden-test paragraph now says the real-data regression lives in a private sibling repository, runs when that clone is present and is skipped otherwise. It no longer points at fixtures in this repo. `todo.md` was deleted. The `.gitignore` comment is now a neutral one-line warning with no `todo.md` pointer. The two fixture ignore lines are kept, and an ignore line for a nested private clone was added. `AGENTS.md` Test Execution now gives the suite size as 19 files. It also has the user-approved paragraph on the golden stub, the override variable and the no-real-data rule. The commit touches 7 files. Both private term files return zero hits on HEAD, checked with canary-verified grep methods. The project file also returns zero hits. The suite passes with 19 of 19 files. All seven Phase 3 exit criteria are ticked in the project file, which is left modified but unstaged. No other tracked file refers to `todo.md`, and the README has no remaining reference to the in-repo fixture path.
+
+Review fixes (2026-09-25, two `docs` commits)
+This local commit fixes review findings 1 and 3 in `README.md`; no other file changed. The golden-test paragraph now says that `MT_PRIVATE_FIXTURES` can point to a private clone elsewhere, resolved against the repo root. It also says the golden test is skipped only when no private clone is found. A misconfigured `MT_PRIVATE_FIXTURES` value or an incomplete clone fails the test instead. `AGENTS.md` was not touched. The diff is one line, and CRLF line endings are kept. Both private term files return zero hits on `README.md`. The commit was not pushed. The project file is still modified with the Phase 3 exit-criteria ticks and is not staged; no criterion ticks changed in this fix.
+In `AGENTS.md` `### Test Execution`, the sentence "An incomplete sibling clone is also an error." now follows the sentence about `MT_PRIVATE_FIXTURES`. This is a one-line diff with CRLF line endings kept, committed locally and not pushed.
+
+Tests: pass (19 of 19 files on the scrub commit; the two follow-ups are prose-only). QA: SKIP (no `[QA]` annotation; docs and test-string edits only, covered by `npm test`).
 
 ### Phase 4: Rewrite history locally
 **Goal**: A local history with no private term in any reachable blob or message, and a `HEAD` tree identical to Phase 3's.
@@ -346,6 +355,9 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 2: the stub uses a plain named ESM import of the `.cjs` resolver; the `createRequire` fallback was not needed. `summary-eval.cjs` exits with a new code 4 when the resolver throws or returns null, before the key is read.
 - Phase 2: the resolver contract was tightened after review. An empty `MT_PRIVATE_FIXTURES` is an error, a relative value resolves against the repo root, the inside-repo guard compares real paths, and an existing sibling without the private module throws a path-free error instead of returning the folder.
 - Phase 2: at the user's request (2026-09-25, review finding 6), a new test file `tests/unit/private-fixtures.test.ts` covers the resolver's set-variable branches. **The suite is now 19 files.** Every later "18 files" expectation in this plan reads as 19: `Test Files 19 passed (19)` with the sibling present, `18 passed | 1 skipped (19)` without it. Phase 3 updates the `AGENTS.md` count to 19.
+- Phase 3: on this Git for Windows build, `git grep -E -f terms-regex.txt` gives false negatives for patterns with non-ASCII bracket expressions (canary: 1 of 2 seeded lines). `git grep -P` and `LC_ALL=C.UTF-8 grep -E` both match 2 of 2. `git grep -F` for the literal file is unaffected. **Every later regex-term check in this plan (Phase 4 history scan, Phase 5 release bodies, Phase 6 pre-push gate) uses `git grep -P` or `LC_ALL=C.UTF-8 grep -E`, never `git grep -E`.** The orchestrator re-ran the Phase 1 history scan with `-P`: same hit paths as before, so the Phase 1 rules stand.
+- Phase 3: `README.md` keeps its generic opening sentence (Category 3 boundary); one of the 12 replacement rules matches only a commit message, so it has no HEAD hit.
+- Phase 3: after review, `README.md` names the `MT_PRIVATE_FIXTURES` override and says the test is skipped only when no private clone is found. At the user's choice (2026-09-25, "Add the sentence"), `AGENTS.md` gains "An incomplete sibling clone is also an error." after the approved paragraph.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
@@ -425,6 +437,19 @@ Implementation health: Green.
 | 6 | Info | The resolver's throw paths had no automated test, only manual exit-criteria runs. | User: accepted -- user chose "Add a test file" on 2026-09-25; `tests/unit/private-fixtures.test.ts` added. |
 
 The fixes touch a validation gate, which normally forces a Full-effort cycle-2 review; cycle 2 was skipped under the user's 1-cycle cap, and the implementer re-ran every Phase 2 exit check plus per-case probes instead. The Step 9 final review covers the resolver again.
+
+### 2026-09-25 -- Implementation Review (after Phase 3, persona: Security auditor)
+
+Implementation health: Green.
+3 findings (0 High, 0 Medium, 1 Low, 2 Info).
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Low | `README.md` said the golden test is skipped otherwise, but a bad override or incomplete clone throws. | Fixed -- README now says it is skipped only when no private clone is found. |
+| 2 | Info | The `AGENTS.md` paragraph covered the bad-override error but not the incomplete-sibling error. | Fixed -- user chose "Add the sentence" on 2026-09-25; one sentence appended. |
+| 3 | Info | `README.md` never named the `MT_PRIVATE_FIXTURES` override. | Fixed -- README names the override and its repo-root resolution. |
+
+The reviewer confirmed zero term hits on HEAD with canary-verified methods, that every replacement literal is absent from HEAD (so the rewrite leaves the HEAD tree unchanged), that no rule's output feeds another rule, and that the test assertions stay consistent. Cycle 2 skipped under the user's 1-cycle cap.
 
 ## Harness Improvement Opportunities
 
