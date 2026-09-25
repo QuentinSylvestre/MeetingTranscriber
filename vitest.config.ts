@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
 // better-sqlite3 can only be built for one target at a time: Electron for packaging and
 // `npm run dev`, Node for the test runner. This used to drop tests/unit/db.test.ts from
@@ -23,6 +24,9 @@ function assertSqliteBuiltForCurrentNode(): void {
 assertSqliteBuiltForCurrentNode();
 
 export default defineConfig({
+  resolve: {
+    alias: { '@src': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   test: {
     exclude: ['node_modules/**'],
   },

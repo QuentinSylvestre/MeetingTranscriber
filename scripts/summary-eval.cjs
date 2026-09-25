@@ -1,6 +1,9 @@
 /**
  * One-off end-to-end evaluation of the municipal summary pipeline against the
- * reference transcript. Runs under Electron so the stored API key can be decrypted
+ * reference transcript, read from the private fixture repo (fixtures/golden-transcript.txt)
+ * located by scripts/private-fixtures.cjs: MT_PRIVATE_FIXTURES, else the sibling
+ * ../meeting_transcriber-private. Exits before any key is read if it is not found.
+ * Runs under Electron so the stored API key can be decrypted
  * by safeStorage; the key is read straight into the request and never printed.
  *
  *   npx electron scripts/summary-eval.cjs <model> [<model> ...]
@@ -10,6 +13,7 @@
 const { app, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { privateDir } = require('./private-fixtures.cjs');
 
 const OUT = path.join(__dirname, '.eval-output');
 const models = process.argv.slice(2).filter(a => !a.startsWith('-') && !a.endsWith('.cjs'));
@@ -44,8 +48,14 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const transcript = fs.readFileSync(
-    path.join(__dirname, '..', 'tests', 'fixtures', 'municipal-summary', 'golden-transcript.txt'), 'utf8');
+  let dir;
+  try { dir = privateDir(); } catch (error) { console.error('PRIVATE_FIXTURES_ERROR', error.message); app.exit(4); return; }
+  if (!dir) {
+    console.error('PRIVATE_FIXTURES_MISSING', 'private fixture repo not found; clone it as ../meeting_transcriber-private or set MT_PRIVATE_FIXTURES');
+    app.exit(4);
+    return;
+  }
+  const transcript = fs.readFileSync(path.join(dir, 'fixtures', 'golden-transcript.txt'), 'utf8');
   let key;
   try { key = readKey(); } catch (error) { console.error('KEY_ERROR', error.message); app.exit(3); return; }
 
