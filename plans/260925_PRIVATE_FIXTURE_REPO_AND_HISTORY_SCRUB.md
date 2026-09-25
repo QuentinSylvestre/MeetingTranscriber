@@ -1,10 +1,12 @@
 # Private fixture repo for the real-data golden test, and a history scrub of the public repo
 
 > **Date**: 2026-09-25
-> **Status**: Exploring
+> **Status**: Draft
+> **Last Updated**: <set by /qclose at archival>
 > **Scope**: Move the real-meeting golden test and all reference recordings/documents into a new private GitHub repo loaded through a public data-free stub, then rewrite the public repo's history so no real-meeting content or personal identifier remains in any reachable commit, tag, or commit message.
+> **Estimated effort**: ~1 day
 
-> **Public-file rule for this plan.** This file lives in a public repo and survives the rewrite. It must never contain a real name, quote, place name, meeting date, figure, fixture/blob SHA, or the leaked path itself. Those live only in the private repo (term list, replacement rules, SHA-check list).
+> **Public-file rule for this plan.** This file lives in a public repo and survives the rewrite. It must never contain a real name, quote, place name, meeting date, figure, fixture/blob SHA, pre-rewrite commit SHA, or the leaked path itself. Those live only in the private repo (term list, replacement rules, SHA-check list, rollback note). The rule also covers the Review Log, §9, every commit message this plan produces, and the output of every agent or reviewer working on it; state it in their briefs. Never paste test output, error messages, stack traces, or absolute paths into any of them; summarize as counts or pass/fail. During Phases 1-4, progress entries in this file carry no commit SHAs; Phase 6 records them afterwards using rewritten SHAs only.
 
 ---
 
@@ -14,9 +16,9 @@
 
 The public repo `QuentinSylvestre/MeetingTranscriber` still carries private content from a real municipal-council meeting, even after the 2026-09-19 fixture purge:
 
-- `tests/unit/summary-golden.test.ts` embeds real speaker names, verbatim quotes, the real agenda with local place names, real figures and timestamps, the fixture's SHA-256, and a line naming off-topic personal subjects that include one person's health and legal-guardianship status.
+- `tests/unit/summary-golden.test.ts` embeds real speaker names, verbatim quotes, the real agenda with local place names, real figures and timestamps, the fixture's SHA-256, and a line naming sensitive off-topic personal subjects.
 - One archived plan contains an absolute Windows path exposing the author's username, employer, and the reference-recording folder name.
-- Several test strings, plan lines, and commit messages carry lower-sensitivity meeting-derived details (meeting dates, agenda-item wording, the fact that a real recording exists).
+- Several test strings, plan lines, and commit messages carry lower-sensitivity meeting-derived details (meeting dates, agenda-item wording, and references that identify the specific real recording). The generic fact that a private real-data test tier exists is public by design and is not scrubbed.
 
 The real fixtures and reference recordings/documents also have no versioned, access-controlled home: they sit in a gitignored folder, a local backup folder, and a Downloads folder.
 
@@ -24,14 +26,14 @@ Desired outcome: a private repo versions all real reference material and the rea
 
 ### Success criteria
 
-1. A private GitHub repo `QuentinSylvestre/MeetingTranscriber-private` exists and holds: the two golden fixtures, the current golden test body (moved unchanged except for `@src` imports), the reference-meeting audio (lossless `.m4a` remux), transcript text, both compte-rendu `.docx` files, the unzipped v1 bundle (expected `.docx`, spec, system and user prompts), the second meeting's audio and transcript, the two short test clips, the Phase 8 verification `.docx`, the history-scrub term list and replacement rules, and a short README.
+1. A private GitHub repo `QuentinSylvestre/MeetingTranscriber-private` exists and holds: the two golden fixtures, the current golden test body (moved unchanged except for its two `src` imports and two fixture URLs), the reference-meeting audio (lossless `.m4a` remux), transcript text, both compte-rendu `.docx` files, the unzipped v1 bundle (expected `.docx`, spec, system and user prompts), the second meeting's audio and transcript, the two short test clips, the Phase 8 verification `.docx`, the history-scrub term list and replacement rules, and a short README.
 2. `tests/unit/summary-golden.test.ts` in the public repo contains no private content. It resolves the private dir (`MT_PRIVATE_FIXTURES`, else the sibling `../meeting_transcriber-private`), dynamically imports the private test module when present, and registers a visible skip otherwise.
-3. `npm test` reports 18 test files in both states: all passing with the sibling present, and 17 passing plus 1 skipped with it absent or `MT_PRIVATE_FIXTURES` pointing to an empty dir.
+3. `npm test` reports 18 test files in both states: all passing with the sibling present, and 17 passing plus 1 skipped with it absent and `MT_PRIVATE_FIXTURES` unset. A set `MT_PRIVATE_FIXTURES` that does not contain the private module fails loudly.
 4. `scripts/summary-eval.cjs` finds the golden transcript through the same resolver instead of the hardcoded `tests/fixtures/...` path.
 5. After the rewrite, a grep of every reachable blob and commit message on `main` and both tags (`git grep` over `git rev-list --all`, plus `git log --all --format=%B`) for the private term list returns zero hits. The term list is kept in the private repo.
-6. Remote `main`, `v0.1.0`, and `v0.1.1` point to rewritten commits. Both GitHub releases still exist with their assets (`.exe`, `latest.yml`).
-7. Local leftovers are gone: the pre-rewrite rollback bundle (after verification), `../meeting_transcriber-PRIVATE-BACKUP/` including the old bundle, the `refs/codex/...` checkpoint ref, and this clone's unreachable objects (reflog expire plus `git gc --prune=now`).
-8. A read-only `gh api .../git/blobs/<sha>` check is documented and has been run once. It covers the old fixture blobs (SHA = `git hash-object` of each private fixture) and the old golden-test blob. The result is recorded, whether served or not.
+6. Remote `main`, `v0.1.0`, and `v0.1.1` point to rewritten commits. Both GitHub releases still exist with their original assets (`.exe`, `latest.yml`), unchanged by the push.
+7. Local leftovers are gone: the pre-rewrite rollback bundle (kept outside OneDrive, deleted after verification), `../meeting_transcriber-PRIVATE-BACKUP/` including the old bundle, the `refs/codex/...` checkpoint ref, and this clone's unreachable objects (reflog expire plus `git gc --prune=now`).
+8. A read-only `gh api .../git/blobs/<sha>` check is documented and has been run once. It covers the old fixture blobs (SHA = `git hash-object` of each private fixture), the old golden-test blob, and one pre-rewrite commit. The result is recorded in the private repo, and §9 notes only that it was recorded.
 
 ### Scope boundaries & non-goals
 
@@ -46,79 +48,323 @@ Non-goals:
 - Deleting the original reference-recording folder in Downloads. The user will do it themselves (Q8).
 - The author identity in commits, `LICENSE.md`, and `electron-builder.yml`. Public by design.
 
----
+## 1) Current State
 
-## Exploration Discovery
+Code, cited by file and a unique string (line numbers drift):
 
-<!-- Transient: /qplan folds these into the planning sections and removes this section. -->
+- **Golden test** — `tests/unit/summary-golden.test.ts` (266 lines, added in a single commit and never modified). Reads both fixtures at module scope via `new URL('../fixtures/municipal-summary/…', import.meta.url)` (lines ~15-17). Imports `renderSummaryDocx` from `../../src/main/summary/render-docx`, `validateSummary` and `type MeetingSummary` from `../../src/main/summary/schema`, plus `jszip` and `vitest`. Transitive imports are only `docx` and `zod` (no Electron). A `describe.skipIf` alone cannot guard the import-time reads.
+- **Vitest config** — `vitest.config.ts`: `assertSqliteBuiltForCurrentNode()` then `test: { exclude: ['node_modules/**'] }`. No alias, no include.
+- **TypeScript** — `tsconfig.json` has `"paths": {}` and `"include": ["src"]`. Tests are not type-checked by `npm run build`.
+- **Skip precedent** — `tests/unit/db.test.ts` uses `describe.skipIf(!Database)`.
+- **Eval harness** — `scripts/summary-eval.cjs`, in the block starting `const transcript = fs.readFileSync(`, hardcodes `path.join(__dirname, '..', 'tests', 'fixtures', 'municipal-summary', 'golden-transcript.txt')`. It runs under `npx electron`, makes paid requests, and requires `dist-eval/` (absent). Not run by this plan.
+- **Other references** — `.gitignore` (the "Real municipal-council transcript/summary" comment block plus two ignore lines); `README.md` (the paragraph starting "Municipal-summary tests cover"); `todo.md` (both items concern these fixtures); `AGENTS.md` `### Test Execution` ("The suite is 18 files"); `src/main/summary/generate.ts` (the "golden meeting is ~68k characters" comment, size only, not private).
+- **Leaked path** — `plans/done/260915-2102_SETTINGS_PROVIDER_LANGUAGE_TITLE_I18N.md`, in the Intent's test-clip reference (~line 17). It is the only occurrence of the username/employer path in any commit.
+- **Tags and releases** — annotated tags `v0.1.0` and `v0.1.1` (subjects are only the version). Both have GitHub releases with `latest.yml` and the installer `.exe`. The release workflow `.github/workflows/release.yml` triggers on `push: tags: 'v*.*.*'`, runs `npm run build -- --publish always`, then `scripts/finalize-github-release.cjs`, which deletes duplicate releases for the tag and publishes the one it keeps. **A tag force-push therefore re-runs publishing against the live releases.** It never runs `npm test`. Installers bundle only `dist-electron`, `dist`, and `package.json` (`electron-builder.yml` `files:`).
+- **Git config** — the system gitconfig sets `core.autocrlf=true`. Both golden fixtures are LF-only, and the golden test pins the transcript's SHA-256, so a CRLF checkout breaks it.
+- **SHAs in tracked files** — plan files under `plans/` and `memory/MEMORY.md` contain many commit SHAs as text (bookkeeping). filter-repo rewrites SHAs in commit messages, not in file contents, so after the rewrite those SHAs point at pre-rewrite commits. See the Review Log's pending decision.
+- **`memory/MEMORY.md`** is tracked in the public repo and written by `/qdream` from session transcripts.
+- **Local leftovers** — `refs/codex/turn-diffs/checkpoints/…` (a ref to a tree, not a commit), unreachable blobs of both real fixtures, `.git/filter-repo/` metadata from the 2026-09-19 run (including `already_ran`), the gitignored fixture copies under `tests/fixtures/municipal-summary/`, `../meeting_transcriber-PRIVATE-BACKUP/`, and gitignored `out/municipal*` folders that hold real-derived comparison output.
 
-### Existing patterns & constraints
+Runtime observations (re-run them; they expire):
 
-- `AGENTS.md` Test Execution: run tests only through `npm test` (`pretest` rebuilds `better-sqlite3` for Node). "The suite is 18 files; a run reporting fewer means something is wrong." `git ls-files` confirms 18 `*.test.ts` files, all under `tests/unit/`.
-- `AGENTS.md` Development Safety: confirm no `npm run dev` or `electron.exe` instance is running before touching `src/main/**`.
-- `vitest.config.ts:25-29` sets only `exclude`. There is no `include`, alias, or env handling. Lines 4-8 hold a stale "16 to 15 files" comment.
-- `tsconfig.json:14,16`: `paths: {}` and `include: ["src"]`. Tests are not type-checked, and tests import sources by relative path only.
-- `tests/unit/summary-golden.test.ts:15-17` reads the fixtures at module scope through `new URL('../fixtures/...', import.meta.url)`. A `describe.skipIf` wrapper alone would not stop the import-time throw, which is why the design uses a stub with a dynamic import.
-- `tests/unit/db.test.ts:61` is the existing `describe.skipIf` precedent.
-- `scripts/summary-eval.cjs:47-48` hardcodes the golden transcript path. It is a paid, hand-run harness. Its outputs go to gitignored `scripts/.eval-output/`.
-- Other references to the fixtures or the golden test: `.gitignore:15-18`, `README.md:123`, `todo.md:1-23`, `src/main/summary/generate.ts:8-9` (size metadata only), and the archived plan `plans/done/260919-0933_*` (fixture path and size, "18 files").
-- `.github/workflows/release.yml` never runs `npm test`. The release builds only bundle `dist-electron`, `dist`, and `package.json` (`electron-builder.yml:7-13`), so no fixture ships in an installer.
-- The 2026-09-19 rewrite left `.git/filter-repo/` metadata. `git-filter-repo` is no longer installed (not on PATH, not a Python module).
+- 2026-09-25, `gh api repos/QuentinSylvestre/MeetingTranscriber/git/blobs/<old fixture blob>` returned the full real-transcript blob. The pre-purge commit is also still served. The repo is public, with 0 forks, 0 stars, no PRs, and `traffic/clones` showing 45 clones from 22 unique cloners over 14 days.
+- 2026-09-25, disposable vitest probes (scratch files, deleted afterwards):
+  - A file outside the repo, run with `--dir`, resolves bare imports (`jszip`, `vitest`) and absolute `src/` imports.
+  - A public stub that does top-level `await import(pathToFileURL(entry).href)` of an external module using an `@src` alias reports `1 passed` with the module present and `1 skipped (1)` without it.
+  - A `describe.skipIf(true)` file still counts in the total (`1 passed | 1 skipped (2)`).
+- 2026-09-25, `ffmpeg-static` probe: both reference `.mp4` files contain a single AAC mono stream (~125 kbps) and no video track.
+- 2026-09-25: `git filter-repo` is not installed (neither on PATH nor as a Python module). `better-sqlite3` is currently built for Node.
 
-### Risks & mitigations
+## 2) Goal
 
-- **Old objects remain on GitHub.** Probes on 2026-09-25 showed GitHub still serves the pre-rewrite commit and the real transcript blob six days after the first purge. Accepted by the user (Q2). Mitigation: the SC 8 check makes the exposure observable.
-- **Prior clones.** GitHub traffic showed 45 clones from 22 unique cloners in the 14 days to 2026-09-25, some possibly before the first purge. These copies cannot be recalled. Accepted residual risk.
-- **Every other clone goes stale.** Nearly all SHAs change, because category 2 reaches back to 2026-09-15. The user confirmed no other clone matters (assumptions checkpoint, item 2).
-- **Category 3 replacements could break tests.** The replacement strings must keep `summary-render.test.ts` assertions true. Gate: `npm test` at 18 files after the rewrite.
-- **Order of operations.** The private repo must be pushed and verified before the rewrite or any deletion, and a rollback bundle must be taken before the rewrite. Every force-push, repo creation, and deletion needs a fresh user confirmation at execution time.
-- **Leaking through this plan or commit messages.** See the public-file rule at the top. The same rule applies to every commit message this plan produces.
-- **Release attachment after moving tags.** The 2026-09-19 rewrite already moved `v0.1.0`, and its release survived with assets. `[unverified]` beyond that precedent.
+Create a private repo holding every real reference artifact and the real-data golden test, loaded by a data-free public stub. Then rewrite the public history so that the post-rewrite `HEAD` tree is byte-identical to the pre-rewrite `HEAD` tree, and no reachable object or message matches the private term list.
 
-### Resolved decisions
+## 3) Design Decisions
 
-- Q1: How is private data removed from GitHub (rewrite, force-push and Support purge, vs. delete and recreate the repo)? — A: A (rewrite and force-push, keep the repo) — Decision: rewrite history with filter-repo and force-push `main` and the tags. The repo keeps its URL and releases.
-- Q2: Add a GitHub Support purge request, accepting that old objects otherwise stay fetchable by SHA? — A: "no support request, it's ok for a few days" — Decision: no Support request and no temporary private visibility. The residual exposure is accepted and made observable (SC 8).
-- Q3: Where do the private-content assertions live (public stub plus private module, whole file private, or public test driven by a private expectations JSON)? — A: A — Decision: a public data-free stub `tests/unit/summary-golden.test.ts` dynamically imports the private test module. The existing test body moves unchanged apart from imports. The 18-file invariant holds.
-- Q4 (revisited after a probe): How are recordings stored? — A: first "C" (audio-only in plain git); after the probe showed both `.mp4` files are already audio-only AAC at about 125 kbps, A — Decision: lossless remux to `.m4a` in plain git (about 69.5 MB for the reference meeting). Switch to LFS the first time a recording would exceed 100 MB.
-- Q5: Which material goes into the private repo? — A: A — Decision: the whole reference-recording folder (both meetings, clips, both compte-rendu docs, unzipped v1 bundle, Phase 8 verification doc) plus the two golden fixtures. The redundant bundle `.zip` is dropped. The clips are treated as real data.
-- Q6: How do the stub and the eval harness locate the private repo? — A: A — Decision: the sibling folder `../meeting_transcriber-private` by convention, with `MT_PRIVATE_FIXTURES` as an override, through one shared resolver. The OneDrive location is out of scope (user note).
-- Q7: How far does the rewrite reach? — A: B — Decision: category 1 (remove the golden test path from all commits; the stub arrives as a new commit), category 2 (replace the leaked Windows path), and category 3 (replace meeting-derived dates and wording in tests, plans, and commit messages, in both history and HEAD). Replacement strings must keep the tests passing.
-- Q8: What happens to local copies after verification? — A: B — Decision: take a rollback bundle before the rewrite. After verification, delete it, the old backup folder, the codex ref, and the unreachable objects. Keep the original reference-recording folder in Downloads for the user to delete.
+| Decision | Choice | Alternatives considered | Rationale |
+|---|---|---|---|
+| Removal strategy (Q1, Q2) | Rewrite history with `git filter-repo`, force-push `main` and tags. No Support purge, no temporary private visibility. | Delete and recreate the repo; Support purge request | User choice. Residual exposure of old objects by SHA is accepted and made observable (Phase 6). |
+| Where private assertions live (Q3) | Public data-free stub plus a private test module with the existing body | Whole file private (17-file suite); public test driven by a private expectations JSON | Smallest change, probe-proven, keeps the 18-file invariant and a visible skip. |
+| Recording storage (Q4) | Lossless remux `.mp4` → `.m4a` (`-vn -c:a copy`), plain git | Lossy Opus re-encode; Git LFS | The files are already audio-only. The reference must stay faithful. It fits under 100 MB. |
+| Private repo contents (Q5) | The whole reference-recording folder (both meetings, clips, docs, unzipped v1 bundle; `.zip` dropped) plus both golden fixtures | CM meeting and fixtures only | The second meeting is also real data. Clips are treated as real. |
+| Locating the private repo (Q6) | One resolver: `MT_PRIVATE_FIXTURES` if set, else the sibling `../meeting_transcriber-private` | Env var only | No setup on this machine. A missing sibling gives a visible skip. |
+| Rewrite scope (Q7) | Category 1 (golden test), 2 (leaked path), 3 (meeting-derived dates and wording in tests, plans, commit messages) | Categories 1 and 2 only | User asked for every private detail. |
+| Local cleanup (Q8) | Delete the rollback bundle, old backup folder, codex ref, and unreachable objects after verification. Keep the Downloads originals. | Delete Downloads too; keep everything | User choice. |
+| Resolver home | `scripts/private-fixtures.cjs` exporting `privateDir()` | A `.ts` module under `tests/` | `summary-eval.cjs` is CommonJS under Electron and cannot import `.ts`. Vitest imports `.cjs` natively. |
+| Resolver contract | Return the absolute dir, or `null` when the sibling folder is absent. **Throw** when `MT_PRIVATE_FIXTURES` is set but `<dir>/tests/summary-golden.private.ts` does not exist, or when the resolved dir lies inside the public repo root. Export shape: `module.exports = { privateDir }`. | Always return `null` on absence | An explicit opt-in that points at nothing usable is a configuration error and must fail loudly. Only the implicit default may degrade to a skip. A private clone nested inside the public repo could be staged by accident. |
+| Stub failure mode | Skip only when `privateDir()` is `null`. If the dir exists, import the private module unguarded, so a broken private module fails the file. | Wrap the import in try/catch and skip on error | A caught import error would turn a broken fixture into a green-looking skip, the failure `AGENTS.md` Test Execution warns about. |
+| Private module location and name | `tests/summary-golden.private.ts` in the private repo. Fixtures in `fixtures/`, so the two `new URL` paths become `../fixtures/golden-summary.json` and `../fixtures/golden-transcript.txt`. | Keep the `*.test.ts` name | A non-`.test.ts` name can never be collected on its own if the private repo is ever nested or globbed. |
+| How category 1 is removed from history | `--strip-blobs-with-ids` using the old golden-test blob id (stored in the private repo) | `--path … --invert-paths` | Blob-id stripping removes only the old content, so the stub committed in Phase 2 at the same path survives the rewrite. |
+| HEAD scrub before the rewrite | Apply the category 2 and 3 replacements to `HEAD` as a normal commit (Phase 3) with the same strings the rewrite uses | Let `filter-repo --replace-text` change HEAD | HEAD edits get tested with `npm test` before the rewrite. The rewrite then leaves the `HEAD` tree unchanged, which gives a byte-exact verification (Phase 4). |
+| Scrub rules location | `scrub/` in the private repo: `terms-literal.txt`, `terms-regex.txt`, `replacements.txt`, `strip-blob-ids.txt`, `rollback-note.md`, `exposure-check.md` | In the public repo, or in this plan | The rules contain the private strings themselves. |
+| Codex ref timing | Delete `refs/codex/…` before the rewrite (Phase 4, user-confirmed step), not after verification | Delete after verification (literal Q8 ordering) | It is a Codex tool checkpoint of a tree, and it would carry the old test blob through the rewrite. Its target is recorded in the private rollback note first. Minor reordering of Q8; the Phase 4 confirmation gate asks the user. |
+| Rewrite location | In place with `git filter-repo --force`, after a full `git bundle create --all` rollback bundle written to `$LOCALAPPDATA/mt-rewrite/` (not OneDrive-synced) | A fresh `--mirror` clone; bundle next to the repo | This clone holds the gitignored `node_modules`, `.env`, and build state. The bundle is the rollback. Writing it under OneDrive would create a new synced copy of the old history. |
+| Release workflow during the tag push | Disable the `Release` workflow (`gh workflow disable`) before force-pushing tags, re-enable after, both user-confirmed | Accept two re-runs | A re-run rebuilds and republishes against the live releases and runs duplicate-release deletion, changing the assets auto-update clients check. |
+| Tree-identity check | Record `git rev-parse HEAD^{tree}` before the rewrite and compare after | `git diff $PRE_HEAD HEAD` | filter-repo may expire reflogs and prune, making `PRE_HEAD` unresolvable, and a failing `git diff` prints nothing to stdout. Tree ids need no old objects. |
+| No fetch between rewrite and push | Nothing fetches from `origin` from Phase 4 until the Phase 5 push completes | Fetch to restore tracking refs | A fetch would re-import the old history into `rev-list --all`. |
+| No push before Phase 5 | Phase 2 and 3 commits stay local until the Phase 5 force-push | Push as usual | A normal push would publish pre-scrub commits that the rewrite then orphans but GitHub keeps. |
+| Scrub rule format | `replacements.txt` holds only prefix-free `literal==>replacement` lines (no `regex:`/`glob:`, no bare lines), applied in file order to bytes. Terms split into `terms-literal.txt` (grepped with `-F -i`) and `terms-regex.txt` (`-E -i`). No blank lines. Dates in full format only, never a bare `YYMMDD` that could collide with plan-slug prefixes. | One `terms.txt` grepped as ERE | Literal paths and figures contain regex metacharacters, which gives silent false negatives. |
+| `todo.md` | Delete it (both items are resolved by this plan) | Leave an empty `# Todo` | Nothing left to track. |
+| Category 3 boundary | Scrub specific identifying details (dates, agenda wording, recording-identifying file and bundle names). Keep the generic existence of a private real-data tier and generic "municipal" product wording, both public by design. | Scrub every mention that real data exists | The stub, `.gitignore`, and `AGENTS.md` must say a private tier exists. Interpretation of Q7, open to user veto. |
+| Gitignored local fixture copies | Delete `tests/fixtures/municipal-summary/` in Phase 6, after the private repo is verified | Keep them | Stale copies of private data (Q8 A/B principle). Deleted after confirmation. |
 
-### Open items
+## 4) External Dependencies & Costs
 
-- Deterministic: the exact category 3 term list and replacement strings. Derive them from the privacy sweep's list plus a fresh `git grep` over all history. Store them in the private repo only, and check them against `summary-render.test.ts` assertions.
-- Deterministic: the private repo layout (for example `fixtures/`, `recordings/`, `docs/`, `tests/summary-golden.private.ts`, `scrub/`) and the private module's fixture paths (relative to its own `import.meta.url`).
-- Deterministic: the `git-filter-repo` install route (pip user install or a project venv per the Python venv rule) and the fresh-clone vs. `--force` requirement.
-- Deterministic: where the shared resolver lives so both a `.ts` test and a `.cjs` script can use it (for example a small `.cjs` module under `scripts/` or `tests/`).
-- Execution-contingent: whether GitHub keeps each release attached after the tags move. Verify with `gh release view` right after the force-push.
+### Required external changes
 
-### Recommended approach
+| Category | Change needed | Owner | Status |
+|---|---|---|---|
+| Third-party services | Create the private GitHub repo `QuentinSylvestre/MeetingTranscriber-private` (`gh repo create --private`) | Agent, after explicit user confirmation (Phase 1) | Pending |
+| Rollout / cutover | Force-push the rewritten `main` and both tags to `origin` | Agent, after explicit user confirmation (Phase 5) | Pending |
+| CI/CD | Disable the `Release` workflow before the tag force-push, re-enable after (`gh workflow disable/enable`) | Agent, after explicit user confirmation (Phase 5) | Pending |
+| Tooling | Install `git-filter-repo` (`python -m pip install --user git-filter-repo`) | Agent (Phase 4) | Pending |
+| Cleanup after rollback window | Delete the local rollback bundle, old backup folder, local fixture copies, and unreachable objects | Agent, after explicit user confirmation (Phase 6) | Pending |
+| Data migration / backfill | Copy the reference material into the private repo (Phase 1) | Agent | Pending |
 
-1. **Private repo first.** Create `MeetingTranscriber-private` (private) after user confirmation. Populate it from the backup folder, the gitignored fixtures, and the reference-recording folder. Remux the `.mp4` files to `.m4a` with `ffmpeg-static` using `-c:a copy`, and unzip the bundle. Copy in the current golden test as the private module with `@src` imports. Write the term list and replacement rules. Push, then verify with a fresh clone.
-2. **Public stub and wiring.** Add an `@src` alias in `vitest.config.ts` (and fix the stale comment). Add the shared resolver. Replace `summary-golden.test.ts` with the stub. Point `summary-eval.cjs` at the resolver. Verify `npm test` in both states (SC 3), then commit.
-3. **Docs.** Update `README.md:123` and `todo.md` (resolve both items), and remove or reword the `.gitignore` fixture lines if they become obsolete. Have `/qplan` propose the `AGENTS.md` Test Execution note about the private tier and the sibling convention.
-4. **Rewrite.** Take a rollback bundle. Install `git-filter-repo`. Run a path removal for category 1 and `--replace-text` / `--replace-message` for categories 2 and 3, using the rules from the private repo. The stub commit re-adds the path afterwards, so run the rewrite in an order that keeps the new stub (for example, restrict the path removal to commits before the stub commit, or re-add the stub after the rewrite). `/qplan` should settle this ordering. Remove the codex ref. Run the SC 5 grep and `npm test`.
-5. **Publish.** After explicit user confirmation, force-push `main` and both tags. Verify SC 6.
-6. **Cleanup and exposure check.** After confirmation, delete the local leftovers (SC 7) and run the SC 8 blob probe.
+### Cost impact
 
-### QA environment
+None. Private repos are free on the user's plan, and about 80 MB of content is well within GitHub's recommended repo size. `git-filter-repo` is free. No API calls: `summary-eval.cjs` is only syntax-checked, never run.
 
-- `npm test` from the repo root. On a `cmd.exe` PATH failure, apply the `npm_config_script_shell` workarounds in `AGENTS.md`. `better-sqlite3` is currently built for Node (rebuilt 2026-09-25 during exploration).
-- Private tier toggling: remove or rename the sibling folder, or point `MT_PRIVATE_FIXTURES` to an empty dir, for the skipped state.
-- History verification: `git grep -E '<terms>' $(git rev-list --all)` and `git log --all --format=%B | grep -E '<terms>'`, with the term list read from the private repo.
-- GitHub (read-only): `git ls-remote origin`, `gh release view <tag> --json assets`, `gh api repos/QuentinSylvestre/MeetingTranscriber/git/blobs/<sha>`.
-- Nothing needs the running Electron app. `summary-eval.cjs` makes paid API calls, so check it only by `node --check` or a dry path-resolution check, never a real run.
+## 5) Implementation Phases
 
-### Assumptions (unconfirmed)
+Order is strict: nothing destructive runs until the private repo exists and is verified (Phase 1), and nothing is pushed until the local rewrite is verified (Phase 4). Every commit message in this plan follows the public-file rule.
 
-None. The assumptions checkpoint was confirmed by the user ("ok").
+### Phase 1: Create and populate the private repo
+**Goal**: A private repo, cloned as the sibling folder, holds every real artifact, the private test module, and the scrub rules.
+**File scope**: `../meeting_transcriber-private/**` (new repo). No public-repo files.
+**Why horizontal**: Phases 2-6 all depend on this repo (the stub's present state, the scrub rules, the cleanup precondition). It has no public-repo slice to pair with.
 
----
+1. Ask the user to confirm, then run `gh repo create QuentinSylvestre/MeetingTranscriber-private --private` and clone it to `../meeting_transcriber-private`.
+2. Layout:
+   - `fixtures/` — `golden-transcript.txt`, `golden-summary.json` (from the gitignored copies; confirm they are identical to `../meeting_transcriber-PRIVATE-BACKUP/`).
+   - `recordings/` — the reference meeting and the two clips. Remux `.mp4` inputs with the bundled ffmpeg (`node -e "console.log(require('ffmpeg-static'))"` from the public repo): `ffmpeg -i <in>.mp4 -vn -c:a copy <out>.m4a`. Copy `.mp3` and `.m4a` inputs as-is. Include the second meeting's `.m4a`.
+   - `transcripts/` — the reference meeting `.txt` and the second meeting `.txt`.
+   - `docs/` — both compte-rendu `.docx` files, the Phase 8 verification `.docx`, and the unzipped v1 bundle folder. Drop the `.zip`.
+   - `tests/summary-golden.private.ts` — a copy of the current `tests/unit/summary-golden.test.ts` with exactly these edits: the two `../../src/main/summary/…` imports become `@src/main/summary/…`, and the two fixture URLs become `../fixtures/<name>`. Nothing else changes.
+   - `scrub/` — `terms.txt`, `replacements.txt`, `strip-blob-ids.txt` (see step 3).
+   - `.gitattributes` — one pattern per line: `* -text` (keeps fixtures and transcripts byte-exact under `core.autocrlf=true`), then `*.m4a binary`, `*.mp3 binary`, `*.docx binary`.
+   - `README.md` — layout, how the public repo finds this folder (sibling convention, `MT_PRIVATE_FIXTURES` override), the "recordings over 100 MB → LFS" rule, the contents of `scrub/`, and that this repo tracks public `main` only (older public checkouts may fail the golden test).
+   - When confirming step 1, tell the user the sibling folder sits in OneDrive sync, and that `MT_PRIVATE_FIXTURES` can point to a non-synced clone instead.
+3. Build `scrub/` from the public repo:
+   - `terms-literal.txt` and `terms-regex.txt`: every private term from the Intent categories, derived by grepping all history (`git grep -n -i -F … $(git rev-list --all)` and `git log --all --format=%B`). Start from the golden test's names, quotes, place and topic names, figures, bundle and file names, the SHA-256, the sensitive personal subjects, the leaked path's username and employer and folder segments, and the category 3 dates and wording. Add unaccented, case, and apostrophe variants (straight and curly), and single-word sub-terms for phrases that may wrap across lines. Iterate until a pass surfaces nothing new outside `tests/unit/summary-golden.test.ts`. Then do one bounded manual read of every historical diff under `plans/` and `tests/`, and every commit message, that mentions golden, municipal, meeting, fixture, or transcript, to catch English paraphrases the seeded grep cannot find.
+   - `replacements.txt`: one `literal==>replacement` rule per category 2 and 3 hit outside the golden test, in the format fixed in Design Decisions. Use long, specific literals and neutral replacements (for example, a real date becomes a fictional date of the same format; the leaked path becomes `C:\path\to\test_60s.mp3`). Each replacement in a test file must keep that test's assertions consistent (Phase 3 proves it). Any rule whose hit is under `src/` is shown to the user before it is kept.
+   - `strip-blob-ids.txt`: the blob id from `git rev-parse HEAD:tests/unit/summary-golden.test.ts`, taken before Phase 2 replaces the file (it is the only version the file ever had).
+4. Commit and push. Clone it fresh into a scratch dir and verify there.
+
+**Exit criteria**:
+- [ ] `gh repo view QuentinSylvestre/MeetingTranscriber-private --json visibility` reports `PRIVATE`.
+- [ ] The fresh scratch clone contains every item from SC 1.
+- [ ] In the fresh clone, the SHA-256 of `fixtures/golden-transcript.txt` equals the SHA-256 pinned inside `tests/summary-golden.private.ts`.
+- [ ] Each remuxed `.m4a` reports the same duration (ffmpeg `Duration:` line) and a single AAC stream, like its source `.mp4`.
+- [ ] `diff` between `tests/summary-golden.private.ts` and the public `tests/unit/summary-golden.test.ts` shows only the 4 import and URL lines.
+- [ ] A final grep with both term files over all public history returns hits only in files that `replacements.txt` or `strip-blob-ids.txt` covers, and in commit messages covered by `replacements.txt`.
+- [ ] `git -C <fresh clone> ls-files --eol fixtures transcripts` shows `i/lf w/lf` for every text file.
+- [ ] The scratch clone is deleted.
+
+### Phase 2: Public stub, resolver, and alias [QA]
+**Goal**: The public golden test becomes a data-free stub that runs the private module when present, and the eval harness uses the same resolver.
+**File scope**: `scripts/private-fixtures.cjs` (new), `tests/unit/summary-golden.test.ts`, `vitest.config.ts`, `scripts/summary-eval.cjs`.
+**Covers**: SC 2, 3, 4.
+
+1. `scripts/private-fixtures.cjs` exports `privateDir()` via `module.exports = { privateDir }`, following the resolver contract in Design Decisions. With `MT_PRIVATE_FIXTURES` set, it returns `path.resolve(value)` if `<value>/tests/summary-golden.private.ts` exists and the path is outside the public repo root, and throws a message naming the variable otherwise (the message must not echo the absolute path). Unset, it returns `path.resolve(__dirname, '..', '..', 'meeting_transcriber-private')` if that is a directory, and `null` otherwise.
+2. `vitest.config.ts`: add `resolve: { alias: { '@src': fileURLToPath(new URL('./src', import.meta.url)) } }`, matching the file's existing `import.meta.url` usage. Leave the header comment alone: its "16 files to 15" text is a historical account, not a current count.
+3. Replace `tests/unit/summary-golden.test.ts` with the stub. Sketch (prose wins on conflict):
+   ```ts
+   // Real-meeting golden test lives in the private sibling repo; see AGENTS.md "Test Execution".
+   import { describe, it } from 'vitest';
+   import { pathToFileURL } from 'node:url';
+   import path from 'node:path';
+   import { privateDir } from '../../scripts/private-fixtures.cjs'; // if the named import fails, use createRequire(import.meta.url)
+   const dir = privateDir();
+   if (dir) await import(pathToFileURL(path.join(dir, 'tests', 'summary-golden.private.ts')).href);
+   else describe.skip('golden municipal summary (private repo not found)', () => { it('requires the private fixture repo', () => {}); });
+   ```
+4. `scripts/summary-eval.cjs`: replace the hardcoded transcript path with `path.join(privateDir() ?? fail(), 'fixtures', 'golden-transcript.txt')`, where a `null` exits non-zero with a clear message before any key is read or any request is made. Update the header comment accordingly.
+
+> **Rejected:** wrapping the dynamic import in `try/catch` and skipping on error — it turns a broken private module into a silent skip. **Use instead:** skip only when `privateDir()` returns `null`.
+
+**Exit criteria**:
+- [ ] `npm test` with the sibling present: `Test Files 18 passed (18)`.
+- [ ] `npm test` with `MT_PRIVATE_FIXTURES` pointing to an empty scratch dir fails in `summary-golden.test.ts` with the resolver's error. With the variable unset and the sibling temporarily renamed: `17 passed | 1 skipped (18)`. The sibling is renamed back afterwards.
+- [ ] Mutation check: change one expected title in the private module, and `npm test` fails in `summary-golden.test.ts`. Revert.
+- [ ] `node --check scripts/summary-eval.cjs` passes, and `grep -n "tests', 'fixtures'" scripts/summary-eval.cjs` returns nothing.
+- [ ] `grep -n -i -F -f terms-literal.txt` and `grep -n -i -E -f terms-regex.txt` on the four files in File scope return nothing.
+- [ ] Commit locally (no push until Phase 5): `feat(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 2 — load golden test from private repo`. No progress commit carrying a SHA.
+
+### Phase 3: Scrub HEAD and update docs
+**Goal**: The working tree at `HEAD` contains no private term, and docs reflect the new layout, before any history is touched.
+**File scope**: `tests/unit/summary-render.test.ts` and any other file with a category 2 or 3 hit in `replacements.txt`, `plans/done/260915-2102_SETTINGS_PROVIDER_LANGUAGE_TITLE_I18N.md`, `plans/done/260919-0933_TRANSCRIBE_DEFAULT_PAGE_COST_TRACKING_DOCX_PERSISTENCE.md`, `README.md`, `todo.md` (delete), `.gitignore`, `AGENTS.md`.
+
+0. Precondition: no `npm run dev` or `electron.exe` instance is running (`AGENTS.md` Development Safety), because a hit may land in `src/`.
+1. Apply every `replacements.txt` rule to the current files: a small scratch script (not committed) that reads the rules in file order and does byte-literal replacement over `git ls-files` output, matching the rule format in Design Decisions, so HEAD and history cannot diverge.
+2. `README.md`: rewrite the "Municipal-summary tests cover" paragraph. The golden regression lives in the private sibling repo, runs when present, and is skipped otherwise. Remove the `tests/fixtures/municipal-summary/` "contains the supplied transcript" claim.
+3. Delete `todo.md`.
+4. `.gitignore`: keep the two fixture ignore lines as a guard, and add `meeting_transcriber-private/`. Replace the whole comment block above them, including its "See todo.md" pointer (dangling once `todo.md` is deleted), with a neutral line, for example "Real meeting data lives in the private sibling repo; never commit it here."
+5. `AGENTS.md` `### Test Execution`: **propose this edit to the user and apply it only on approval** (governance text). Proposed addition after the "18 files" paragraph: "The golden summary test (`tests/unit/summary-golden.test.ts`) is a stub. It runs the real-data test from the private repo cloned as `../meeting_transcriber-private` (override: `MT_PRIVATE_FIXTURES`), and shows as 1 skipped file when that clone is absent. A set `MT_PRIVATE_FIXTURES` without the private module is an error. Never commit real meeting data, names, quotes, or recording details to this repo, including `plans/` and `memory/`; check new plan and memory text against the private repo's `scrub/` term files before pushing."
+
+**Exit criteria**:
+- [ ] `git grep -n -i -F -f terms-literal.txt HEAD` and `git grep -n -i -E -f terms-regex.txt HEAD` return zero hits. Canary: copy one tracked file to an untracked scratch path, add one known term, confirm the same grep pointed at the scratch file reports it, then delete it.
+- [ ] `npm test`: `Test Files 18 passed (18)` with the sibling present.
+- [ ] `README.md` golden-test paragraph updated, with no reference to fixtures in this repo.
+- [ ] `todo.md` deleted.
+- [ ] `.gitignore` comment reworded with no `todo.md` pointer, and the ignore lines kept.
+- [ ] `AGENTS.md` Test Execution note applied with user approval, or recorded as declined in §9.
+- [ ] Commit locally (no push until Phase 5): `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 3 — scrub HEAD and update docs`.
+
+### Phase 4: Rewrite history locally
+**Goal**: A local history with no private term in any reachable blob or message, and a `HEAD` tree identical to Phase 3's.
+**File scope**: `.git` only (refs, objects). No working-tree edits.
+
+1. Preconditions: working tree clean; no `electron.exe` running. `PRE_HEAD` is the last local commit, whatever it is.
+2. Rollback record, in the private repo's `scrub/rollback-note.md` (committed there before step 3): `PRE_HEAD`, `git rev-parse HEAD^{tree}` (`PRE_TREE`), the codex ref name and target, and `git ls-tree -r` listings of both tag commits. Then `git bundle create "$LOCALAPPDATA/mt-rewrite/mt-pre-rewrite-260925.bundle" --all` and `git bundle verify` it.
+3. Ask the user to confirm deleting the codex ref (the Q8 reordering), then `git update-ref -d <refs/codex/… name>`.
+4. Move `.git/filter-repo/` (leftover `already_ran` from 2026-09-19) into `$LOCALAPPDATA/mt-rewrite/` so filter-repo does not treat this as a continuation run.
+5. Install `git-filter-repo` with pip (`--user`), and confirm `git filter-repo --version` works. If it is not on PATH, run it as `python -m git_filter_repo`.
+6. Run: `git filter-repo --force --strip-blobs-with-ids <private>/scrub/strip-blob-ids.txt --replace-text <private>/scrub/replacements.txt --replace-message <private>/scrub/replacements.txt`.
+7. Check `git remote -v`, and re-add `origin https://github.com/QuentinSylvestre/MeetingTranscriber.git` if filter-repo removed it `[unverified]`. Do **not** fetch.
+
+> **Rejected:** `--path tests/unit/summary-golden.test.ts --invert-paths` — it also deletes the Phase 2 stub from HEAD. **Use instead:** `--strip-blobs-with-ids` on the old blob only.
+
+**Exit criteria**:
+- [ ] `git rev-parse HEAD^{tree}` equals `PRE_TREE`.
+- [ ] Zero hits for both term files across `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and `git for-each-ref refs/tags --format='%(contents)'`.
+- [ ] For each tag, `git ls-tree -r` differs from the recorded pre-rewrite listing only in paths that `replacements.txt` rules or the stripped blob touch.
+- [ ] Every `docs(<slug>)` and `feat(<slug>)` scope in `git log --format=%s` still names an existing plan file under `plans/` or `plans/done/`.
+- [ ] `git rev-list --all --objects` contains no id from `strip-blob-ids.txt`, nor either fixture blob id (`git hash-object` of each private fixture).
+- [ ] `git show-ref` lists only `refs/heads/main` and both tags. No `refs/remotes/*`, no `refs/codex`.
+- [ ] Both tags still point to commits whose version in `package.json` matches the tag (`git show v0.1.0:package.json | grep version`).
+- [ ] `npm test`: `Test Files 18 passed (18)`.
+
+### Phase 5: Publish the rewrite
+**Goal**: The remote matches the rewritten local history, with the releases intact.
+**File scope**: remote refs only.
+
+1. Record each release's asset ids and `updated_at` (`gh release view <tag> --json assets`) into the private `scrub/rollback-note.md`.
+2. Show the user the Phase 4 results. Ask for explicit confirmation to disable the `Release` workflow and force-push.
+3. `gh workflow disable Release`. Then `git push --force origin main`, then `git push --force origin v0.1.0 v0.1.1`.
+4. `git fetch origin`, then verify. After verification, ask the user to confirm and run `gh workflow enable Release`.
+5. Check release bodies for private terms: `gh release view <tag> --json body` grepped with both term files. The installers are built from `dist`/`dist-electron` only and contain no fixtures.
+
+**Exit criteria**:
+- [ ] `git ls-remote origin` shows `main` equal to local `HEAD`, and both tags (peeled `^{}`) equal to the local tag targets. No other refs.
+- [ ] `gh run list --workflow Release` shows no run created after the push.
+- [ ] `gh release view <tag> --json tagName,assets` for both tags lists the same asset ids and `updated_at` values as recorded in step 1. If a release lost its tag attachment, re-attach it with `gh release edit <tag> --tag <tag>`, then re-check.
+- [ ] Release bodies have zero term hits.
+- [ ] `gh workflow view Release` shows the workflow enabled again.
+- [ ] `gh api repos/QuentinSylvestre/MeetingTranscriber/contents/tests/unit/summary-golden.test.ts --jq .size` matches the local stub size.
+
+### Phase 6: Local cleanup and exposure check
+**Goal**: Remove local stale copies of private data, and record what GitHub still serves.
+**File scope**: `$LOCALAPPDATA/mt-rewrite/` (bundle and old filter-repo metadata), `../meeting_transcriber-PRIVATE-BACKUP/`, `tests/fixtures/municipal-summary/` (gitignored), `.git` (reflog, unreachable objects, `.git/filter-repo/`).
+
+1. Ask the user to confirm the deletions listed in File scope. The Downloads originals and the gitignored `out/municipal*` folders are **not** deleted (see Follow-up Work). Tell the user that OneDrive's recycle bin keeps the deleted backup folder until emptied (accepted under the OneDrive deferral).
+2. Delete the confirmed items. Then `git reflog expire --expire=now --all` and `git gc --prune=now`.
+3. Exposure check, read-only: for each id in `strip-blob-ids.txt`, the `git hash-object` of each private fixture, and `PRE_HEAD` from the rollback note, run `gh api repos/QuentinSylvestre/MeetingTranscriber/git/blobs/<id>` (or `/git/commits/<sha>`). Record served or not served in the private `scrub/exposure-check.md`. §9 says only "exposure check recorded privately on <date>".
+4. Record progress for Phases 1-6 in this file, using post-rewrite SHAs only.
+5. Offer the user, as a separate optional step, deleting the two old Release workflow runs (`gh run delete`), whose pages link pre-rewrite tag commits. Act only on an explicit yes.
+
+**Exit criteria**:
+- [ ] The confirmed paths no longer exist (`[ -e <path> ]` false for each).
+- [ ] `git cat-file -e <id>` fails for every stripped and fixture blob id and for `PRE_HEAD`, and `git fsck --unreachable --no-reflogs` reports nothing.
+- [ ] `npm test`: `Test Files 18 passed (18)`, with the private repo still supplying the fixtures.
+- [ ] The exposure-check result is recorded privately, and §9 holds no SHAs.
+- [ ] Before pushing, both term files return zero hits over `HEAD` and over the new commit's message.
+- [ ] Commit: `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 6 — cleanup and exposure check`. Push `main` normally (not forced) after user confirmation.
+
+## 6) Risk Assessment
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Old objects stay fetchable by SHA on GitHub | Real data remains retrievable by anyone holding a SHA | Accepted (Q2). Made observable by Phase 6. Follow-up item 1. |
+| Pre-purge clones exist | Copies cannot be recalled | Accepted residual. Follow-up item 1. |
+| A replacement breaks a test | Red suite after the rewrite | HEAD scrub is tested in Phase 3 before the rewrite. Phase 4's tree-identity check proves the rewrite changed nothing at HEAD. |
+| An incomplete term list leaves a leak | Private content survives in history | Phase 1 iterates to a fixed point, adds variants, and does a bounded manual read for paraphrases. Phase 3 runs a canary. Phase 4 re-greps all history, messages, and tag contents. |
+| Irreversible push of a bad rewrite | Public history damaged | Rollback bundle (Phase 4). Push only after all Phase 4 criteria pass and the user confirms. |
+| filter-repo removes `origin`, chokes on the tree ref, or resumes the 2026-09-19 run | Rewrite blocked or merged with stale maps | Codex ref deleted and `.git/filter-repo/` moved aside beforehand. `origin` checked and re-added without fetching. |
+| A fresh private clone checks fixtures out with CRLF | Golden test hash fails | `* -text` in the private `.gitattributes`; Phase 1 checks the fresh clone's hash and line endings. |
+| Tag force-push re-runs the Release workflow | Rebuilt or deleted releases; changed auto-update assets | Workflow disabled around the push (Phase 5); asset ids and timestamps compared before and after. |
+| Releases detach from the moved tags | Auto-update breaks for installed clients | The 2026-09-19 precedent kept `v0.1.0` attached. Phase 5 verifies and re-attaches if needed. |
+| Old commit SHAs published elsewhere (Actions run pages, push-event feed, SHAs in plan and memory text) | Discoverable pointers to still-fetchable old objects | Accepted under Q2 for GitHub-side pointers; optional old-run deletion in Phase 6. SHAs in tracked file text: pending user decision (Review Log). |
+| A future `/qdream` sweep or plan re-publishes private terms | New leak after the scrub | Proposed `AGENTS.md` rule (Phase 3). Follow-up item 6. |
+| Private data leaks through this plan or its commit messages | New public leak | Public-file rule. Phase 4 greps commit messages. The plan file itself is in the grep scope. |
+| The stub's top-level await or `.cjs` import misbehaves under vitest 5 | Suite fails to load | Probe-proven for top-level await and alias. The `.cjs` import is covered by Phase 2's exit criteria. |
+| Other local clones become stale | Confusing pulls | User confirmed none matter (explore checkpoint, item 2). |
+
+## 7) Verification
+
+- `npm test` from the repo root (see `AGENTS.md` Test Execution for the Windows `npm_config_script_shell` workarounds). Expect 18 files: all passing with the sibling present, `17 passed | 1 skipped` when it is absent.
+- History scan: `terms-literal.txt` with `-F -i` and `terms-regex.txt` with `-E -i`, over `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and tag contents, all empty.
+- Tree identity across the rewrite: `git rev-parse HEAD^{tree}` equals the recorded `PRE_TREE`.
+- Remote: `git ls-remote origin`, `gh release view <tag> --json assets`.
+- Exposure: the `gh api …/git/blobs/<id>` check from Phase 6 (read-only).
+- Never run `npx electron scripts/summary-eval.cjs`: it makes paid requests. `node --check` only.
+
+## 8) Documentation Updates
+
+| Document | Update needed | Phase |
+|---|---|---|
+| `README.md` | Rewrite the golden-test paragraph for the private sibling repo and the skip behavior | 3 |
+| `todo.md` | Delete (both items resolved) | 3 |
+| `.gitignore` | Reword the fixture comment neutrally and drop its "See todo.md" pointer; keep the ignore lines | 3 |
+| `AGENTS.md` `### Test Execution` | Add the private-tier note (user approval required) | 3 |
+| `scripts/summary-eval.cjs` header comment | Name the private repo as the transcript source | 2 |
+| Private repo `README.md` | Layout, discovery convention, LFS rule, `scrub/` contents | 1 (doc-table-only) |
+
+Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "16 files to 15" sentences are false-positive (historical accounts, still accurate). `src/main/summary/generate.ts` "golden meeting" size comment is false-positive (still true, since the meeting now lives in the private repo; it names nothing private).
+
+## 9) Implementation Divergences from Plan
+<Reserved -- filled during implementation>
+
+## Follow-up Work (Deferred)
+
+1. **Old objects on GitHub.** The pre-purge fixture blobs and the old golden-test blob may stay fetchable by SHA until GitHub garbage-collects them, and pre-purge clones cannot be recalled. The user declined a Support purge (Q2). Re-run the Phase 6 exposure check later if needed.
+2. **Real-derived local output under gitignored `out/municipal*`.** Not in Q8's cleanup set. The user decides whether to move it to the private repo or delete it.
+3. **Original reference-recording folder in Downloads.** The user deletes it (Q8).
+4. **Synthetic public golden fixture (Tier 1).** Deferred. Reopen if the golden test should run on public clones or in CI.
+5. **Git LFS.** Adopt it in the private repo the first time a recording would exceed 100 MB.
+6. **Future writes to `plans/` and `memory/`.** `/qdream` and later plans write into this public repo from session transcripts. The proposed `AGENTS.md` rule covers it; a pre-push hook grepping the private term files would enforce it (not in scope).
+7. **Commit subjects over 50 characters.** The plan-slug scope convention makes this plan's subjects exceed the 50-character governance limit; accepted as a convention conflict.
+
+## Review Log
+
+### 2026-09-25 -- Plan review (via /qplan, 1 cycle cap)
+
+Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Security auditor). 52 raw findings, merged to 26 (7 High, 13 Medium, 6 Low). 25 auto-resolved; 1 escalated. Cycle cap of 1 set by the user, so no re-review ran.
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | High | Tag force-push fires `release.yml`, which republishes and deletes duplicate releases (Arch, SE, Sec). | Fixed -- Phase 5 disables the workflow around the push and compares asset ids before and after. |
+| 2 | High | SC 3, the resolver contract, and the Phase 2 criterion disagreed on the set-but-empty override (Arch, SE). | Fixed -- resolver throws when the override lacks the private module; SC 3 and Phase 2 aligned. |
+| 3 | High | `/qdev` progress entries would write pre-rewrite SHAs into this public file (Arch, SE, Sec). | Fixed -- public-file rule bans SHAs during Phases 1-4; Phase 6 records progress with rewritten SHAs. |
+| 4 | High | `core.autocrlf=true` checks fixtures out with CRLF, breaking the pinned hash (SE). | Fixed -- private `.gitattributes` has `* -text`; Phase 1 checks line endings in a fresh clone. |
+| 5 | High | Old commit SHAs remain as text in plan and memory files after the rewrite, pointing at old objects (Sec). | Escalated -- user decision pending, see below. |
+| 6 | Medium | Tree-identity gate via `git diff $PRE_HEAD` can false-pass once old objects are pruned (Arch, SE, Sec). | Fixed -- compare `HEAD^{tree}` against a recorded `PRE_TREE`. |
+| 7 | Medium | Expecting `refs/remotes/*` after the rewrite needs a fetch, which re-imports old history (Arch, SE). | Fixed -- no remote refs expected, and no fetch until after the Phase 5 push. |
+| 8 | Medium | Leftover `.git/filter-repo/already_ran` may make filter-repo resume the 2026-09-19 run (Arch). | Fixed -- Phase 4 moves the folder aside first. |
+| 9 | Medium | Only HEAD was verified; broad replacements could corrupt tag trees silently (Arch). | Fixed -- tag `ls-tree` listings recorded and compared; rules must be long specific literals. |
+| 10 | Medium | Rollback bundle next to the repo creates a new OneDrive-synced copy of old history (Arch, Sec). | Fixed -- bundle goes to `$LOCALAPPDATA/mt-rewrite/`; OneDrive recycle-bin residual disclosed. |
+| 11 | Medium | Codex-ref reordering of Q8 had no confirmation gate (Arch). | Fixed -- Phase 4 step 3 asks the user first. |
+| 12 | Medium | "Recording exists" was a category 3 item, yet the stub and docs must state a private tier exists (Arch, Sec). | Fixed -- Category 3 boundary decision added; open to user veto. |
+| 13 | Medium | Unbounded Phase 3 scope could edit `src/` without approval or dev-safety check (Arch, SE). | Fixed -- `src/` rules shown to the user; Development Safety precondition added. |
+| 14 | Medium | The Phase 6 push had no term-grep gate (Arch). | Fixed -- zero-hit grep over HEAD and the new message before pushing. |
+| 15 | Medium | No rule stopped Phase 2-3 commits from being pushed before the rewrite (Arch, SE). | Fixed -- "no push until Phase 5" decision and exit criteria. |
+| 16 | Medium | Term derivation was seeded only from the golden test and misses English paraphrases (Sec). | Fixed -- variants plus a bounded manual read of related diffs and messages. |
+| 17 | Medium | ERE grep over literal terms gives silent false negatives (Sec, SE). | Fixed -- split literal and regex term files, `-F`/`-E` with `-i`, canary check. |
+| 18 | Medium | Test output, errors, and paths pasted into the plan or commits could leak (Sec). | Fixed -- public-file rule extended to outputs and briefs; resolver error must not echo paths. |
+| 19 | Medium | `memory/MEMORY.md` and future plans can re-publish terms after the scrub (Sec). | Fixed -- proposed `AGENTS.md` rule widened; Follow-up item 6. |
+| 20 | Medium | Plan text itself held a real figure and duration, and named the sensitive subjects (Sec). | Fixed -- figures removed; Intent wording generalized. |
+| 21 | Low | `prune-packable: 0` gate was vacuous (Arch, SE). | Fixed -- `git cat-file -e` must fail for every stripped id. |
+| 22 | Low | `.gitattributes` line had invalid multi-pattern syntax (SE). | Fixed -- one pattern per line. |
+| 23 | Low | `.cjs` named import and `__dirname` in the config were unverified (Arch, SE). | Fixed -- explicit export shape, `createRequire` fallback, `import.meta.url` alias. |
+| 24 | Low | Exposure check covered blobs only, not old commits (Arch). | Fixed -- one old commit added; result recorded privately. |
+| 25 | Low | Release bodies, old Actions runs, and `.gitignore` nesting guard were uncovered (Sec). | Fixed -- release-body grep, optional run deletion, ignore line and resolver nesting check. |
+| 26 | Low | Plan commit subjects exceed the 50-character limit (SE). | Fixed -- recorded as an accepted convention conflict in Follow-up item 7. |
+
+Finding 5 (escalated): the rewrite changes commit SHAs, but SHAs written as text inside plan files and `memory/MEMORY.md` stay as they were, so they point at pre-rewrite commits that GitHub still serves. Some text tokens also predate the 2026-09-19 purge. Options and the recommendation are in the `/qplan` report to the user.
 
 ## Harness Improvement Opportunities
 
 - `/qexplore` Step 1.5 has no trio for data-sweep or privacy-audit tasks. The mutation-finder brief had nothing to trace here, so the orchestrator swapped in a privacy-sweep agent. — cost: an off-script judgment call and a deviation recorded by hand — suggested change: add an optional "content-sweep" brief variant for tasks whose subject is data present in the tree or history rather than code flow.
 - `/qexplore` writes project files to `plans/` without considering repo visibility. In a public repo, an exploration about private data can leak that data through its own intent file. — cost: the orchestrator had to invent a public-file rule mid-session — suggested change: add a Step 3 check: "if the repo is public and the subject is sensitive, write no sensitive literals; keep them in a private location."
 - Council eligibility versus engaged-conversation opt-in is ambiguous for trade-off questions in `/qexplore`. `shared/AGENTS.md` says to invoke council before escalating, but the qcouncil opt-in table makes `/qexplore` opt-in, and only for oscillation. — cost: unclear whether Q1 should have been council-gated; it was offered as opt-in — suggested change: state explicitly whether `/qexplore` trade-off questions (not only oscillation) run council silently or offer it.
+- `/qplan` requires phase-level code snippets and file:line citations, but this plan's most important content (the term list, replacement strings, blob ids) cannot appear in the plan at all, because the plan is public. — cost: the plan points to private-repo files instead of stating them, so reviewers cannot audit the actual rules — suggested change: let a plan declare an out-of-band artifact location for sensitive contract details, and have reviewers be told it exists.
