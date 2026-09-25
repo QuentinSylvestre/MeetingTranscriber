@@ -299,7 +299,7 @@ In the `## Usage` section:
 
 ## Implementation
 
-### Implementation (2026-09-16, code: c18359f)
+### Implementation (2026-09-16, code: 8aa323f)
 
 All 8 steps implemented as specified, with the divergences noted below (all driven by the per-phase review cycle). `npm test`: 81/81 passing (up from the 78 baseline — 3 new AssemblyAI request-body tests plus 1 new runner.ts assertion). `npx tsc --noEmit`: zero new errors versus the pre-existing baseline, confirmed via a `git stash`/`tsc`/`git stash pop` comparison — the same 12 errors exist on HEAD, all in files this plan never touches (`google.ts`, `useRecorder.ts`, `JobProgressView.tsx`, `mic-capture.worklet.ts`, plus two `@types/node`/`electron.d.ts` declaration conflicts).
 

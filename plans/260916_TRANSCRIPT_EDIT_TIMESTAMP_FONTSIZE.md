@@ -814,19 +814,19 @@ QA: BLOCKED (Electron display environment; Phase 2 and Phase 3 QA deferred to co
 
 | # | Severity | Finding | Resolution |
 |---|---|---|---|
-| 1 | High | `runner.ts:124` `TranscriptTurn` object missing `original_text`; TypeScript TS2345; new transcriptions would break | Fixed — `original_text: turn.text` added to runner's push (ee8dbb6) |
-| 2 | Medium | `App.tsx` reinvented `getPreference` IPC unwrap inline instead of using existing `useSettings` hook — divergent contract | Fixed — replaced with `useSettings().getPreference('fontSize')` at component top level (ee8dbb6) |
-| 3 | Medium | Font-size `<select>` lacked `id`/`htmlFor` label association — screen readers cannot pair them | Fixed — `id="font-size-select"` + `htmlFor` added (ee8dbb6) |
-| 4 | Low | SettingsView did not set CSS variable on load, only on change — narrow race where select shows stale value | Fixed — `setProperty('--font-size-base', ...)` added in `Promise.all.then` (ee8dbb6) |
-| 5 | Low | `.sidebar-brand-name` was not scaled — at XXL, sub-label would be larger than brand name | Fixed — `font-size: var(--font-size-base)` applied (ee8dbb6) |
-| 6 | Low | French i18n gender mismatch: `'Moyen (défaut)'` → `'Moyenne (défaut)'` | Fixed (ee8dbb6) |
+| 1 | High | `runner.ts:124` `TranscriptTurn` object missing `original_text`; TypeScript TS2345; new transcriptions would break | Fixed — `original_text: turn.text` added to runner's push (1cb1d77) |
+| 2 | Medium | `App.tsx` reinvented `getPreference` IPC unwrap inline instead of using existing `useSettings` hook — divergent contract | Fixed — replaced with `useSettings().getPreference('fontSize')` at component top level (1cb1d77) |
+| 3 | Medium | Font-size `<select>` lacked `id`/`htmlFor` label association — screen readers cannot pair them | Fixed — `id="font-size-select"` + `htmlFor` added (1cb1d77) |
+| 4 | Low | SettingsView did not set CSS variable on load, only on change — narrow race where select shows stale value | Fixed — `setProperty('--font-size-base', ...)` added in `Promise.all.then` (1cb1d77) |
+| 5 | Low | `.sidebar-brand-name` was not scaled — at XXL, sub-label would be larger than brand name | Fixed — `font-size: var(--font-size-base)` applied (1cb1d77) |
+| 6 | Low | French i18n gender mismatch: `'Moyen (défaut)'` → `'Moyenne (défaut)'` | Fixed (1cb1d77) |
 | 7 | Low | Exit criterion 5 (no truncation at XXL) ticked but requires runtime verification | Accepted — verified during combined Phase 2/3 QA runtime run |
 
 Cycle 2 Low items (out of scope): three other SettingsView selects also lack `htmlFor`/`id` pairing — pre-existing pattern, not introduced by this phase.
 
 #### Implementation notes
 
-Implementation (2026-09-16, code: c8371eb)
+Implementation (2026-09-16, code: f730a50)
 Added `--font-size-base: 14px` to `:root` in `global.css`. Replaced hardcoded font sizes in `body` (14px), `.turn-text` (13px), `.sidebar-item` (13px), `.sidebar-section-label` (10px), `.sidebar-brand-sub` (10px) with `var(--font-size-base)` / `calc()` expressions. Simplified `.turn-text-editor` fallback. Added `App.tsx` mount `useEffect` reading `fontSize` preference and applying the CSS variable with `alive` guard. Added `fontSize` state to `SettingsView` loaded in `Promise.all`, `handleFontSizeChange` handler with immediate CSS var update, and Accessibility card with four-option select. Added 6 i18n keys in both locales.
 
 ### 2026-09-16 — Implementation Review (after Phase 2, persona: Senior engineer, Maintainability reviewer)
@@ -838,14 +838,14 @@ QA: BLOCKED (Electron display environment required; deferred to Phase 3 QA runti
 
 | # | Severity | Finding | Resolution |
 |---|---|---|---|
-| 1 | Low | `export.ts` imported `formatLine` AND re-exported it; named import was redundant given the re-export | Fixed — clarifying comment added explaining import is used internally by `formatTranscript` (39ca59e) |
-| 2 | Low | `transcript-view.test.ts` had a local `formatTime` copy that would drift from `format-line.ts` canonical | Fixed — replaced with `import { formatLine, formatTime } from '../../src/main/ipc/format-line'` (39ca59e) |
-| 3 | Low | Stale comment in test referencing `export.ts` after function moved to `format-line.ts` | Fixed — comment removed (39ca59e) |
-| 4 | Low | `fontSize: 14` in `DEFAULT_PREFERENCES` lacked comment explaining it's Phase 3's forward-declaration | Fixed — comment added (39ca59e) |
+| 1 | Low | `export.ts` imported `formatLine` AND re-exported it; named import was redundant given the re-export | Fixed — clarifying comment added explaining import is used internally by `formatTranscript` (76d0cd3) |
+| 2 | Low | `transcript-view.test.ts` had a local `formatTime` copy that would drift from `format-line.ts` canonical | Fixed — replaced with `import { formatLine, formatTime } from '../../src/main/ipc/format-line'` (76d0cd3) |
+| 3 | Low | Stale comment in test referencing `export.ts` after function moved to `format-line.ts` | Fixed — comment removed (76d0cd3) |
+| 4 | Low | `fontSize: 14` in `DEFAULT_PREFERENCES` lacked comment explaining it's Phase 3's forward-declaration | Fixed — comment added (76d0cd3) |
 
 #### Implementation notes
 
-Implementation (2026-09-16, code: d08fa1b)
+Implementation (2026-09-16, code: 48ae8ca)
 Extended `PreferenceKey` and `Preferences` in `ipc-types.ts` with `includeTimestamps: boolean` and `fontSize: number`. Added both to `DEFAULT_PREFERENCES` in `store.ts` (`includeTimestamps: true`, `fontSize: 14`). Added per-key type validation and updated the catch-all list in `settings.ts`. Extracted `formatTime` and `formatLine` to a new pure file `format-line.ts` (no Electron imports) to enable direct Vitest import; `export.ts` imports `formatLine` for use in `formatTranscript` and re-exports it for external callers. Updated both `export:to-file` and `export:to-clipboard` handlers to read `includeTimestamps` from `readPreferences()` and pass it. Added Export card with checkbox to `SettingsView`. Added 2 i18n keys in both locales. Added `includeTimestamps: true` and `fontSize: 14` default assertions to `settings.test.ts`. Replaced tautological `formatLine` tests in `transcript-view.test.ts` with real function calls. Updated README Exporting section.
 
 ### 2026-09-16 — Implementation Review (after Phase 1, persona: Senior engineer, Reliability engineer)
@@ -855,20 +855,20 @@ Implementation health: Green.
 
 | # | Severity | Finding | Resolution |
 |---|---|---|---|
-| 1 | Medium | `updateTurnText`/`resetTranscript` had no `try/catch`; IPC failures silently swallowed; `error` state never set | Fixed — added `try/catch` calling `setError` in both callbacks (c9cb703) |
-| 2 | Medium | Reset during active edit left `editing=true`; subsequent blur saved reset text as a user edit | Fixed — draft sync `useEffect` now also calls `setEditing(false)` (c9cb703) |
-| 3 | Low | `.speaker-turn--edited` `padding-left` shifted edited turn content rightward vs unedited turns | Fixed — removed `padding-left`; used `margin-left: -2px` (c9cb703); then replaced with `box-shadow: inset` (8056c6f) |
-| 4 | Low | `commitEdit` compared `trimmed !== turn.text` instead of `turn.text.trim()`; trailing whitespace in stored text caused spurious edits | Fixed — comparison uses `turn.text.trim()` (c9cb703) |
-| 5 | Low | `updateTurnText` DB call returned void with no affected-rows check; stale ID silently no-oped | Fixed — checks `result.changes === 0` and throws (c9cb703) |
+| 1 | Medium | `updateTurnText`/`resetTranscript` had no `try/catch`; IPC failures silently swallowed; `error` state never set | Fixed — added `try/catch` calling `setError` in both callbacks (a223e94) |
+| 2 | Medium | Reset during active edit left `editing=true`; subsequent blur saved reset text as a user edit | Fixed — draft sync `useEffect` now also calls `setEditing(false)` (a223e94) |
+| 3 | Low | `.speaker-turn--edited` `padding-left` shifted edited turn content rightward vs unedited turns | Fixed — removed `padding-left`; used `margin-left: -2px` (a223e94); then replaced with `box-shadow: inset` (0eca0fe) |
+| 4 | Low | `commitEdit` compared `trimmed !== turn.text` instead of `turn.text.trim()`; trailing whitespace in stored text caused spurious edits | Fixed — comparison uses `turn.text.trim()` (a223e94) |
+| 5 | Low | `updateTurnText` DB call returned void with no affected-rows check; stale ID silently no-oped | Fixed — checks `result.changes === 0` and throws (a223e94) |
 | 6 | Low | Component unmount while textarea focused would fire `commitEdit` on a stale turn | Accepted — React 18 `setState` safe after unmount; no alive-guard pattern in sibling hooks |
-| 7 | Low | `startEdit` `setTimeout` not cleared on unmount | Fixed — `focusTimerRef` cleanup `useEffect` added (c9cb703) |
+| 7 | Low | `startEdit` `setTimeout` not cleared on unmount | Fixed — `focusTimerRef` cleanup `useEffect` added (a223e94) |
 
-Cycle 2 introduced one new Low (margin-left clipped by implicit overflow-x): fixed in 8056c6f using `box-shadow: inset`.
+Cycle 2 introduced one new Low (margin-left clipped by implicit overflow-x): fixed in 0eca0fe using `box-shadow: inset`.
 QA: PASS (user runtime verification 2026-09-16).
 
 #### Implementation notes
 
-Implementation (2026-09-16, code: 08732c7)
+Implementation (2026-09-16, code: 7ee6de1)
 Added `original_text TEXT NOT NULL` to `transcript_turns` in both `001_initial.sql` and the `MIGRATION_001` string in `index.ts`. Updated `saveTranscript` to bind `@text` twice (both `text` and `original_text` columns). Added `updateTurnText` (UPDATE with affected-rows check) and `resetTranscript` (transaction-wrapped UPDATE + SELECT) to `transcript.ts`. Registered both as new IPC handlers in `db.ts`. Extended `useTranscript` with `updateTurnText` and `resetTranscript` callbacks (await-then-patch pattern, try/catch to `setError`). Rewrote `SpeakerTurnItem` with double-click-to-textarea editing: `draft` state, auto-size `useEffect`, blur-commit with trim guard, Escape-cancel, `setEditing(false)` in the `turn.text` sync effect, `focusTimerRef` cleanup. Added `.speaker-turn--edited` (box-shadow inset accent) and `.turn-text-editor` CSS rules. Wired Reset button in `TranscriptView` header (`window.confirm` guard, `hasEdits` disabled state). Added 4 i18n keys in both `en` and `fr`. Fixed 2 existing `db.test.ts` fixtures missing `original_text`; added `updateTurnText` and `resetTranscript` test cases. Dev DB migrated in-place (ALTER TABLE + backfill) rather than deleted — 438 turns preserved with `original_text = text`.
 
 ### 2026-09-16 — Plan creation review (via /qplan, high effort)
