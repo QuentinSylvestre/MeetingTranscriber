@@ -61,7 +61,7 @@ Code, cited by file and a unique string (line numbers drift):
 - **Leaked path** — `plans/done/260915-2102_SETTINGS_PROVIDER_LANGUAGE_TITLE_I18N.md`, in the Intent's test-clip reference (~line 17). It is the only occurrence of the username/employer path in any commit.
 - **Tags and releases** — annotated tags `v0.1.0` and `v0.1.1` (subjects are only the version). Both have GitHub releases with `latest.yml` and the installer `.exe`. The release workflow `.github/workflows/release.yml` triggers on `push: tags: 'v*.*.*'`, runs `npm run build -- --publish always`, then `scripts/finalize-github-release.cjs`, which deletes duplicate releases for the tag and publishes the one it keeps. **A tag force-push therefore re-runs publishing against the live releases.** It never runs `npm test`. Installers bundle only `dist-electron`, `dist`, and `package.json` (`electron-builder.yml` `files:`).
 - **Git config** — the system gitconfig sets `core.autocrlf=true`. Both golden fixtures are LF-only, and the golden test pins the transcript's SHA-256, so a CRLF checkout breaks it.
-- **SHAs in tracked files** — plan files under `plans/` and `memory/MEMORY.md` contain many commit SHAs as text (bookkeeping). filter-repo rewrites SHAs in commit messages, not in file contents, so after the rewrite those SHAs point at pre-rewrite commits. See the Review Log's pending decision.
+- **SHAs in tracked files** — plan files under `plans/` and `memory/MEMORY.md` contain many commit SHAs as text (bookkeeping), some predating the 2026-09-19 purge. filter-repo rewrites SHAs in commit messages, not in file contents, so after the rewrite those SHAs point at pre-rewrite commits. Handled by Phase 4 step 8 (Q9).
 - **`memory/MEMORY.md`** is tracked in the public repo and written by `/qdream` from session transcripts.
 - **Local leftovers** — `refs/codex/turn-diffs/checkpoints/…` (a ref to a tree, not a commit), unreachable blobs of both real fixtures, `.git/filter-repo/` metadata from the 2026-09-19 run (including `already_ran`), the gitignored fixture copies under `tests/fixtures/municipal-summary/`, `../meeting_transcriber-PRIVATE-BACKUP/`, and gitignored `out/municipal*` folders that hold real-derived comparison output.
 
@@ -105,6 +105,7 @@ Create a private repo holding every real reference artifact and the real-data go
 | No push before Phase 5 | Phase 2 and 3 commits stay local until the Phase 5 force-push | Push as usual | A normal push would publish pre-scrub commits that the rewrite then orphans but GitHub keeps. |
 | Scrub rule format | `replacements.txt` holds only prefix-free `literal==>replacement` lines (no `regex:`/`glob:`, no bare lines), applied in file order to bytes. Terms split into `terms-literal.txt` (grepped with `-F -i`) and `terms-regex.txt` (`-E -i`). No blank lines. Dates in full format only, never a bare `YYMMDD` that could collide with plan-slug prefixes. | One `terms.txt` grepped as ERE | Literal paths and figures contain regex metacharacters, which gives silent false negatives. |
 | `todo.md` | Delete it (both items are resolved by this plan) | Leave an empty `# Todo` | Nothing left to track. |
+| SHAs written in tracked files (Q9) | After the rewrite and before the push, one local commit replaces every old commit SHA in current tracked text files with its new SHA, same abbreviation length, using the 2026-09-19 commit map composed with this rewrite's map | Accept stale SHAs; blank them in every historical blob | User choice (Q9: B). Fixes what readers of the repo see and keeps cross-references working. Old SHAs in historical file versions remain, the same exposure class accepted in Q2. |
 | Category 3 boundary | Scrub specific identifying details (dates, agenda wording, recording-identifying file and bundle names). Keep the generic existence of a private real-data tier and generic "municipal" product wording, both public by design. | Scrub every mention that real data exists | The stub, `.gitignore`, and `AGENTS.md` must say a private tier exists. Interpretation of Q7, open to user veto. |
 | Gitignored local fixture copies | Delete `tests/fixtures/municipal-summary/` in Phase 6, after the private repo is verified | Keep them | Stale copies of private data (Q8 A/B principle). Deleted after confirmation. |
 
@@ -222,11 +223,13 @@ Order is strict: nothing destructive runs until the private repo exists and is v
 5. Install `git-filter-repo` with pip (`--user`), and confirm `git filter-repo --version` works. If it is not on PATH, run it as `python -m git_filter_repo`.
 6. Run: `git filter-repo --force --strip-blobs-with-ids <private>/scrub/strip-blob-ids.txt --replace-text <private>/scrub/replacements.txt --replace-message <private>/scrub/replacements.txt`.
 7. Check `git remote -v`, and re-add `origin https://github.com/QuentinSylvestre/MeetingTranscriber.git` if filter-repo removed it `[unverified]`. Do **not** fetch.
+8. Check the tree-identity criterion below **before** this step, because this step changes `HEAD`. Then remap SHAs written in files (Q9): build a map from the 2026-09-19 `commit-map` (moved aside in step 4) composed with this run's `.git/filter-repo/commit-map`. With a scratch script (not committed), find every 7-40 character hex token in `git ls-files` text files, match it by prefix against the map's old SHAs, and replace it with the new SHA truncated to the same length. List tokens that match no old SHA, or match several, and disposition each one (not a SHA, or ambiguous) in the private rollback note. Commit locally: `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 4 — remap commit references`.
 
 > **Rejected:** `--path tests/unit/summary-golden.test.ts --invert-paths` — it also deletes the Phase 2 stub from HEAD. **Use instead:** `--strip-blobs-with-ids` on the old blob only.
 
 **Exit criteria**:
-- [ ] `git rev-parse HEAD^{tree}` equals `PRE_TREE`.
+- [ ] Before step 8: `git rev-parse HEAD^{tree}` equals `PRE_TREE`.
+- [ ] After step 8: every hex token in tracked text files that was remapped resolves to a commit reachable from `main` (`git merge-base --is-ancestor <token> main`), and every unmatched token has a disposition in the private rollback note. The remap commit's diff touches only hex tokens.
 - [ ] Zero hits for both term files across `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and `git for-each-ref refs/tags --format='%(contents)'`.
 - [ ] For each tag, `git ls-tree -r` differs from the recorded pre-rewrite listing only in paths that `replacements.txt` rules or the stripped blob touch.
 - [ ] Every `docs(<slug>)` and `feat(<slug>)` scope in `git log --format=%s` still names an existing plan file under `plans/` or `plans/done/`.
@@ -234,6 +237,7 @@ Order is strict: nothing destructive runs until the private repo exists and is v
 - [ ] `git show-ref` lists only `refs/heads/main` and both tags. No `refs/remotes/*`, no `refs/codex`.
 - [ ] Both tags still point to commits whose version in `package.json` matches the tag (`git show v0.1.0:package.json | grep version`).
 - [ ] `npm test`: `Test Files 18 passed (18)`.
+- [ ] Both term files return zero hits over `HEAD` and over the remap commit's message.
 
 ### Phase 5: Publish the rewrite
 **Goal**: The remote matches the rewritten local history, with the releases intact.
@@ -284,7 +288,7 @@ Order is strict: nothing destructive runs until the private repo exists and is v
 | A fresh private clone checks fixtures out with CRLF | Golden test hash fails | `* -text` in the private `.gitattributes`; Phase 1 checks the fresh clone's hash and line endings. |
 | Tag force-push re-runs the Release workflow | Rebuilt or deleted releases; changed auto-update assets | Workflow disabled around the push (Phase 5); asset ids and timestamps compared before and after. |
 | Releases detach from the moved tags | Auto-update breaks for installed clients | The 2026-09-19 precedent kept `v0.1.0` attached. Phase 5 verifies and re-attaches if needed. |
-| Old commit SHAs published elsewhere (Actions run pages, push-event feed, SHAs in plan and memory text) | Discoverable pointers to still-fetchable old objects | Accepted under Q2 for GitHub-side pointers; optional old-run deletion in Phase 6. SHAs in tracked file text: pending user decision (Review Log). |
+| Old commit SHAs published elsewhere (Actions run pages, push-event feed, SHAs in plan and memory text) | Discoverable pointers to still-fetchable old objects | Accepted under Q2 for GitHub-side pointers; optional old-run deletion in Phase 6. SHAs in current tracked files: remapped before the push (Q9, Phase 4 step 8); old SHAs in historical file versions accepted. |
 | A future `/qdream` sweep or plan re-publishes private terms | New leak after the scrub | Proposed `AGENTS.md` rule (Phase 3). Follow-up item 6. |
 | Private data leaks through this plan or its commit messages | New public leak | Public-file rule. Phase 4 greps commit messages. The plan file itself is in the grep scope. |
 | The stub's top-level await or `.cjs` import misbehaves under vitest 5 | Suite fails to load | Probe-proven for top-level await and alias. The `.cjs` import is covered by Phase 2's exit criteria. |
@@ -329,7 +333,7 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 
 ### 2026-09-25 -- Plan review (via /qplan, 1 cycle cap)
 
-Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Security auditor). 52 raw findings, merged to 26 (7 High, 13 Medium, 6 Low). 25 auto-resolved; 1 escalated. Cycle cap of 1 set by the user, so no re-review ran.
+Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Security auditor). 52 raw findings, merged to 26 (7 High, 13 Medium, 6 Low). 25 auto-resolved; 1 escalated, then resolved by the user (Q9). Cycle cap of 1 set by the user, so no re-review ran.
 
 | # | Severity | Finding (one line) | Resolution (one line) |
 |---|---|---|---|
@@ -337,7 +341,7 @@ Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Se
 | 2 | High | SC 3, the resolver contract, and the Phase 2 criterion disagreed on the set-but-empty override (Arch, SE). | Fixed -- resolver throws when the override lacks the private module; SC 3 and Phase 2 aligned. |
 | 3 | High | `/qdev` progress entries would write pre-rewrite SHAs into this public file (Arch, SE, Sec). | Fixed -- public-file rule bans SHAs during Phases 1-4; Phase 6 records progress with rewritten SHAs. |
 | 4 | High | `core.autocrlf=true` checks fixtures out with CRLF, breaking the pinned hash (SE). | Fixed -- private `.gitattributes` has `* -text`; Phase 1 checks line endings in a fresh clone. |
-| 5 | High | Old commit SHAs remain as text in plan and memory files after the rewrite, pointing at old objects (Sec). | Escalated -- user decision pending, see below. |
+| 5 | High | Old commit SHAs remain as text in plan and memory files after the rewrite, pointing at old objects (Sec). | Fixed -- user chose Q9 B: Phase 4 step 8 remaps current files before the push. |
 | 6 | Medium | Tree-identity gate via `git diff $PRE_HEAD` can false-pass once old objects are pruned (Arch, SE, Sec). | Fixed -- compare `HEAD^{tree}` against a recorded `PRE_TREE`. |
 | 7 | Medium | Expecting `refs/remotes/*` after the rewrite needs a fetch, which re-imports old history (Arch, SE). | Fixed -- no remote refs expected, and no fetch until after the Phase 5 push. |
 | 8 | Medium | Leftover `.git/filter-repo/already_ran` may make filter-repo resume the 2026-09-19 run (Arch). | Fixed -- Phase 4 moves the folder aside first. |
@@ -360,7 +364,7 @@ Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Se
 | 25 | Low | Release bodies, old Actions runs, and `.gitignore` nesting guard were uncovered (Sec). | Fixed -- release-body grep, optional run deletion, ignore line and resolver nesting check. |
 | 26 | Low | Plan commit subjects exceed the 50-character limit (SE). | Fixed -- recorded as an accepted convention conflict in Follow-up item 7. |
 
-Finding 5 (escalated): the rewrite changes commit SHAs, but SHAs written as text inside plan files and `memory/MEMORY.md` stay as they were, so they point at pre-rewrite commits that GitHub still serves. Some text tokens also predate the 2026-09-19 purge. Options and the recommendation are in the `/qplan` report to the user.
+Finding 5: the rewrite changes commit SHAs, but SHAs written as text inside plan files and `memory/MEMORY.md` stay as they were, so they point at pre-rewrite commits that GitHub still serves. Some predate the 2026-09-19 purge. Q9 options: A accept, B remap current files after the rewrite, C blank them in every historical blob. The user chose B on 2026-09-25.
 
 ## Harness Improvement Opportunities
 
