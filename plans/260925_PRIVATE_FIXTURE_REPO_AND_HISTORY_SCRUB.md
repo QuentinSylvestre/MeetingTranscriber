@@ -306,12 +306,25 @@ Tests: not run (remote refs only; the pushed tree is byte-identical to the one t
 5. Offer the user, as a separate optional step, deleting the two old Release workflow runs (`gh run delete`), whose pages link pre-rewrite tag commits. Act only on an explicit yes.
 
 **Exit criteria**:
-- [ ] The confirmed paths no longer exist (`[ -e <path> ]` false for each).
-- [ ] `git cat-file -e <id>` fails for every stripped and fixture blob id and for `PRE_HEAD`, and `git fsck --unreachable --no-reflogs` reports nothing.
-- [ ] `npm test`: `Test Files 18 passed (18)`, with the private repo still supplying the fixtures.
-- [ ] The exposure-check result is recorded privately, and §9 holds no SHAs.
-- [ ] Before pushing, both term files return zero hits over `HEAD` and over the new commit's message.
-- [ ] Commit: `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 6 — cleanup and exposure check`. Push `main` normally (not forced) after user confirmation.
+- [x] The confirmed paths no longer exist (`[ -e <path> ]` false for each).
+- [x] `git cat-file -e <id>` fails for every stripped and fixture blob id and for `PRE_HEAD`, and `git fsck --unreachable --no-reflogs` reports nothing.
+- [x] `npm test`: `Test Files 18 passed (18)`, with the private repo still supplying the fixtures.
+- [x] The exposure-check result is recorded privately, and §9 holds no SHAs.
+- [x] Before pushing, both term files return zero hits over `HEAD` and over the new commit's message.
+- [x] Commit: `docs(260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB): phase 6 — cleanup and exposure check`. Push `main` normally (not forced) after user confirmation.
+
+Implementation (2026-09-25, code: none; orchestrator-run)
+After the user confirmed "Delete all", the orchestrator deleted four things: the rollback folder outside OneDrive (the bundle plus the 2026-09-19 filter-repo metadata), the old backup folder, the gitignored local fixture copies, and this run's `.git/filter-repo/`. Before deleting, it checked that both fixtures were byte-identical in the local copy, the private working tree and the private remote. The reflog was then expired and `git gc --prune=now` run. `git fsck --unreachable --no-reflogs` reports nothing. `git cat-file -e` fails for the stripped blob, both fixture blobs and `PRE_HEAD`. `npm test` passes 19 of 19 files (232 tests), with the private repo supplying the fixtures. The read-only exposure check was recorded privately on 2026-09-25. At the user's request ("Delete both runs"), the two old Release workflow runs were deleted. Both releases still have their 2 assets.
+
+Progress record with post-rewrite SHAs:
+- Planning: intent `259c4e1`, plan and review `7738a19`, Q9 remap decision `8d07262`.
+- Phase 1: progress `8990067` (private-repo work only).
+- Phase 2: code `7640a63`, review fixes `047e1a6`, resolver test `1952465`, progress `0e82936`.
+- Phase 3: scrub and docs `d49744b`, review fixes `27380b7` and `fdca886`, progress `c0fd313`.
+- Phase 4: SHA remap `7fb8c77`, progress `4adf001`. The force-push published `4adf001` as `main`.
+- Phase 5: progress `7972d31`.
+
+Tests: pass (19 of 19 files). QA: SKIP (no `[QA]` annotation; local cleanup and a read-only API check).
 
 ## 6) Risk Assessment
 
@@ -374,6 +387,8 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 4: the remap left 24 tokens that are not commit ids unchanged: decimals, session-id fragments, and a CSS colour. They are dispositioned by class in the private rollback note.
 - Phase 5: the orchestrator executed the phase in-session instead of through an implementation sub-agent. Every step was a user-gated remote action, and a separate reviewer verified the published state.
 - Phase 5: both releases report `targetCommitish` as `main`, but they still resolve by tag. The release-body check passes trivially because both bodies are empty.
+- Phase 6: the exposure check found the 3 stripped blobs and the old remote `main` commit still served by SHA. This is the residual accepted in Q2. `PRE_HEAD` was never pushed, so the old remote `main` stood in as the "pre-rewrite commit" probe. Details are in the private `scrub/exposure-check.md`.
+- Phase 6: the per-phase review ran after the final push instead of before it, because the push is one of this phase's exit criteria. The Step 9 final review covers it.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
