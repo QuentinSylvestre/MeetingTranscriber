@@ -12,7 +12,7 @@ dist-main/
 scripts/.eval-output/
 dist-eval/
 
-# Real municipal-council transcript/summary used as a golden test fixture — kept
-# locally, not committed. See todo.md.
+# Real meeting data lives in the private sibling repo; never commit it here.
 tests/fixtures/municipal-summary/golden-transcript.txt
 tests/fixtures/municipal-summary/golden-summary.json
+meeting_transcriber-private/
