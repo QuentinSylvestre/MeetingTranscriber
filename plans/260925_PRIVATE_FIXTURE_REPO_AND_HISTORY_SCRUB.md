@@ -256,16 +256,21 @@ Tests: pass (19 of 19 files on the scrub commit; the two follow-ups are prose-on
 > **Rejected:** `--path tests/unit/summary-golden.test.ts --invert-paths` — it also deletes the Phase 2 stub from HEAD. **Use instead:** `--strip-blobs-with-ids` on the old blob only.
 
 **Exit criteria**:
-- [ ] Before step 8: `git rev-parse HEAD^{tree}` equals `PRE_TREE`.
-- [ ] After step 8: every hex token in tracked text files that was remapped resolves to a commit reachable from `main` (`git merge-base --is-ancestor <token> main`), and every unmatched token has a disposition in the private rollback note. The remap commit's diff touches only hex tokens.
-- [ ] Zero hits for both term files across `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and `git for-each-ref refs/tags --format='%(contents)'`.
-- [ ] For each tag, `git ls-tree -r` differs from the recorded pre-rewrite listing only in paths that `replacements.txt` rules or the stripped blob touch.
-- [ ] Every `docs(<slug>)` and `feat(<slug>)` scope in `git log --format=%s` still names an existing plan file under `plans/` or `plans/done/`.
-- [ ] `git rev-list --all --objects` contains no id from `strip-blob-ids.txt`, nor either fixture blob id (`git hash-object` of each private fixture).
-- [ ] `git show-ref` lists only `refs/heads/main` and both tags. No `refs/remotes/*`, no `refs/codex`.
-- [ ] Both tags still point to commits whose version in `package.json` matches the tag (`git show v0.1.0:package.json | grep version`).
-- [ ] `npm test`: `Test Files 18 passed (18)`.
-- [ ] Both term files return zero hits over `HEAD` and over the remap commit's message.
+- [x] Before step 8: `git rev-parse HEAD^{tree}` equals `PRE_TREE`.
+- [x] After step 8: every hex token in tracked text files that was remapped resolves to a commit reachable from `main` (`git merge-base --is-ancestor <token> main`), and every unmatched token has a disposition in the private rollback note. The remap commit's diff touches only hex tokens.
+- [x] Zero hits for both term files across `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and `git for-each-ref refs/tags --format='%(contents)'`.
+- [x] For each tag, `git ls-tree -r` differs from the recorded pre-rewrite listing only in paths that `replacements.txt` rules or the stripped blob touch.
+- [x] Every `docs(<slug>)` and `feat(<slug>)` scope in `git log --format=%s` still names an existing plan file under `plans/` or `plans/done/`. (User: accepted 2026-09-25 as "no scope changed by the rewrite": 6 of 9 distinct scopes never named a plan file, because of archive renames and generic scopes.)
+- [x] `git rev-list --all --objects` contains no id from `strip-blob-ids.txt`, nor either fixture blob id (`git hash-object` of each private fixture).
+- [x] `git show-ref` lists only `refs/heads/main` and both tags. No `refs/remotes/*`, no `refs/codex`.
+- [x] Both tags still point to commits whose version in `package.json` matches the tag (`git show v0.1.0:package.json | grep version`).
+- [x] `npm test`: `Test Files 18 passed (18)`.
+- [x] Both term files return zero hits over `HEAD` and over the remap commit's message.
+
+Implementation (2026-09-25, code: SHAs withheld until Phase 6, per the public-file rule)
+Phase 4 rewrote the local history. First, a rollback note and a verified full rollback bundle were saved, the tool checkpoint ref was deleted, and the previous filter-repo state was moved aside. git-filter-repo then ran once and exited cleanly, with no commits pruned. It stripped the old golden-test blob and applied the replacement rules to file contents and commit messages. The HEAD tree after the rewrite is byte-identical to the tree before it. A local commit then remapped the commit references written in tracked files. 132 references in 3 plan files were rewritten to the new ids, all reachable from main. The diff changes hex tokens only. 24 tokens were not commit ids and were left unchanged; none was ambiguous or pointed at a pruned commit. The term scans over every reachable blob, every commit message and the tag annotations found zero hits. No stripped or fixture blob id is reachable. Only main and the two tags remain as refs. Both tags keep their package versions, and each tag's tree changed only where a replacement rule or the stripped blob applies. The test suite passes with 19 of 19 files. The commit-scope check is left open: 6 of 9 scopes never named a plan file, and the rewrite changed none of them. The remote was not re-added, so it must be added again, without fetching, before Phase 5.
+
+Tests: pass (19 of 19 files after the rewrite). QA: SKIP (no `[QA]` annotation; `.git` history only). Orchestrator follow-up: `origin` re-added at the user's request ("try again", 2026-09-25) with no fetch; the commit-scope criterion ticked on the user's acceptance ("accept", 2026-09-25).
 
 ### Phase 5: Publish the rewrite
 **Goal**: The remote matches the rewritten local history, with the releases intact.
@@ -358,6 +363,10 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 3: on this Git for Windows build, `git grep -E -f terms-regex.txt` gives false negatives for patterns with non-ASCII bracket expressions (canary: 1 of 2 seeded lines). `git grep -P` and `LC_ALL=C.UTF-8 grep -E` both match 2 of 2. `git grep -F` for the literal file is unaffected. **Every later regex-term check in this plan (Phase 4 history scan, Phase 5 release bodies, Phase 6 pre-push gate) uses `git grep -P` or `LC_ALL=C.UTF-8 grep -E`, never `git grep -E`.** The orchestrator re-ran the Phase 1 history scan with `-P`: same hit paths as before, so the Phase 1 rules stand.
 - Phase 3: `README.md` keeps its generic opening sentence (Category 3 boundary); one of the 12 replacement rules matches only a commit message, so it has no HEAD hit.
 - Phase 3: after review, `README.md` names the `MT_PRIVATE_FIXTURES` override and says the test is skipped only when no private clone is found. At the user's choice (2026-09-25, "Add the sentence"), `AGENTS.md` gains "An incomplete sibling clone is also an error." after the approved paragraph.
+- Phase 4: filter-repo ran as `python -m git_filter_repo`, because the pip `--user` install did not put `git filter-repo` on PATH (the fallback in step 5). `git bundle create --all` accepted the tree ref, so no bundle fallback was needed.
+- Phase 4: the permission classifier blocked the sub-agent from re-adding `origin` in step 7. The orchestrator re-added it on the user's explicit instruction, without fetching.
+- Phase 4: the commit-scope criterion cannot hold literally. 6 of 9 distinct scopes never named an existing plan file, because of archive renames (one with a date bump), a year-prefixed slug variant, and two generic scopes. The scope set is identical before and after the rewrite. The user accepted "no scope changed by the rewrite" as the criterion's meaning on 2026-09-25.
+- Phase 4: the remap left 24 tokens that are not commit ids unchanged: decimals, session-id fragments, and a CSS colour. They are dispositioned by class in the private rollback note.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
@@ -451,6 +460,29 @@ Implementation health: Green.
 
 The reviewer confirmed zero term hits on HEAD with canary-verified methods, that every replacement literal is absent from HEAD (so the rewrite leaves the HEAD tree unchanged), that no rule's output feeds another rule, and that the test assertions stay consistent. Cycle 2 skipped under the user's 1-cycle cap.
 
+### 2026-09-25 -- Implementation Review (after Phase 4, persona: Security auditor)
+
+Implementation health: Green.
+17 findings (0 High, 0 Medium, 4 Low, 13 Info). Reviewer verdict: GO for publishing.
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 3 | Low | 3 regex guard patterns and 22 literal terms had no positive canary in old history or fixtures. | Fixed -- orchestrator canary: 72 of 72 literal terms and 11 of 11 ASCII regex samples matched with both methods. |
+| 12 | Low | `FETCH_HEAD` and this run's `.git/filter-repo/` maps hold old ids locally; none of them is pushed. | Fixed -- already in Phase 6 scope (reflog expire, gc, filter-repo metadata removal). |
+| 13 | Low | The commit-scope criterion stays unticked and §9 had no Phase 4 entry explaining it. | Fixed -- §9 entry added; user accepted "no scope changed by the rewrite" on 2026-09-25 and it is ticked. |
+| 15 | Low | The `npm test` criterion text says 18 files while §9 says 19; the reviewer did not re-run tests. | Fixed -- implementer ran `npm test` after the rewrite: 19 of 19 passed; §9 records the 19-file count. |
+
+The 13 Info rows are confirmations, and the reviewer recommends no action for them:
+- Zero term hits across all blobs, messages, tag annotations and path names. The canary run over the pre-rewrite bundle found hits.
+- No stripped or fixture blob id is in the object store.
+- `HEAD~1^{tree}` equals `PRE_TREE`.
+- The remap changes hex only. All 29 old-to-new mappings match on subject, and no stale id is left in tracked text or messages.
+- Both tags are annotated and keep their versions. Only `main` and the tags are refs, and every object is reachable.
+- Identities and dates are unchanged.
+- qvalidate passes.
+
+Cycle 2 was skipped under the user's 1-cycle cap.
+
 ## Harness Improvement Opportunities
 
 - `/qexplore` Step 1.5 has no trio for data-sweep or privacy-audit tasks. The mutation-finder brief had nothing to trace here, so the orchestrator swapped in a privacy-sweep agent. — cost: an off-script judgment call and a deviation recorded by hand — suggested change: add an optional "content-sweep" brief variant for tasks whose subject is data present in the tree or history rather than code flow.
@@ -458,3 +490,4 @@ The reviewer confirmed zero term hits on HEAD with canary-verified methods, that
 - Council eligibility versus engaged-conversation opt-in is ambiguous for trade-off questions in `/qexplore`. `shared/AGENTS.md` says to invoke council before escalating, but the qcouncil opt-in table makes `/qexplore` opt-in, and only for oscillation. — cost: unclear whether Q1 should have been council-gated; it was offered as opt-in — suggested change: state explicitly whether `/qexplore` trade-off questions (not only oscillation) run council silently or offer it.
 - `/qplan` requires phase-level code snippets and file:line citations, but this plan's most important content (the term list, replacement strings, blob ids) cannot appear in the plan at all, because the plan is public. — cost: the plan points to private-repo files instead of stating them, so reviewers cannot audit the actual rules — suggested change: let a plan declare an out-of-band artifact location for sensitive contract details, and have reviewers be told it exists.
 - `/qdev` Step 7 expects `code: <sha>` in implementation notes and plan commits, but this plan's public-file rule bans pre-rewrite SHAs in the file during Phases 1-4. — cost: an ad-hoc "SHAs withheld" marker in notes and commit subjects — suggested change: let a plan declare "no SHAs until phase N" and have `/qdev` substitute a fixed placeholder that `commit-pairing` accepts.
+- A permission classifier blocked a plan-approved sub-agent step (re-adding a git remote) mid-phase, and the orchestrator correctly could not perform it on the sub-agent's behalf. — cost: one user round-trip and a gap between the rewrite and the remote re-add — suggested change: when a plan phase contains a step a classifier may block (remote config, force operations), have `/qdev` pre-surface it to the user for an explicit instruction before dispatch, so the orchestrator can run it directly.
