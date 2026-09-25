@@ -283,12 +283,17 @@ Tests: pass (19 of 19 files after the rewrite). QA: SKIP (no `[QA]` annotation; 
 5. Check release bodies for private terms: `gh release view <tag> --json body` grepped with both term files. The installers are built from `dist`/`dist-electron` only and contain no fixtures.
 
 **Exit criteria**:
-- [ ] `git ls-remote origin` shows `main` equal to local `HEAD`, and both tags (peeled `^{}`) equal to the local tag targets. No other refs.
-- [ ] `gh run list --workflow Release` shows no run created after the push.
-- [ ] `gh release view <tag> --json tagName,assets` for both tags lists the same asset ids and `updated_at` values as recorded in step 1. If a release lost its tag attachment, re-attach it with `gh release edit <tag> --tag <tag>`, then re-check.
-- [ ] Release bodies have zero term hits.
-- [ ] `gh workflow view Release` shows the workflow enabled again.
-- [ ] `gh api repos/QuentinSylvestre/MeetingTranscriber/contents/tests/unit/summary-golden.test.ts --jq .size` matches the local stub size.
+- [x] `git ls-remote origin` shows `main` equal to local `HEAD`, and both tags (peeled `^{}`) equal to the local tag targets. No other refs.
+- [x] `gh run list --workflow Release` shows no run created after the push.
+- [x] `gh release view <tag> --json tagName,assets` for both tags lists the same asset ids and `updated_at` values as recorded in step 1. If a release lost its tag attachment, re-attach it with `gh release edit <tag> --tag <tag>`, then re-check.
+- [x] Release bodies have zero term hits.
+- [x] `gh workflow view Release` shows the workflow enabled again.
+- [x] `gh api repos/QuentinSylvestre/MeetingTranscriber/contents/tests/unit/summary-golden.test.ts --jq .size` matches the local stub size.
+
+Implementation (2026-09-25, code: none; orchestrator-run)
+Every step of this phase was user-gated, so the orchestrator ran it in-session and did not dispatch a sub-agent. The pre-push asset ids, sizes, updatedAt values and the Release run count (2) went into the private rollback note. After the user confirmed ("Proceed"), the Release workflow was disabled, `main` was force-pushed, and then both tags were force-pushed. A fetch followed. `git ls-remote` matches the local `HEAD`, `main`, both tag objects and both peeled commits, and shows no other refs. The Release workflow still has 2 runs, and no run of any workflow was created on the push day. Both releases keep all 4 assets, with unchanged ids and updatedAt values. The release bodies are empty, so they have zero term hits. The remote stub is 771 bytes, which matches the local file. After the user confirmed ("Re-enable"), the workflow was re-enabled, and it is `active` with no new run.
+
+Tests: not run (remote refs only; the pushed tree is byte-identical to the one that passed 19 of 19). QA: SKIP (no `[QA]` annotation).
 
 ### Phase 6: Local cleanup and exposure check
 **Goal**: Remove local stale copies of private data, and record what GitHub still serves.
@@ -367,6 +372,8 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 4: the permission classifier blocked the sub-agent from re-adding `origin` in step 7. The orchestrator re-added it on the user's explicit instruction, without fetching.
 - Phase 4: the commit-scope criterion cannot hold literally. 6 of 9 distinct scopes never named an existing plan file, because of archive renames (one with a date bump), a year-prefixed slug variant, and two generic scopes. The scope set is identical before and after the rewrite. The user accepted "no scope changed by the rewrite" as the criterion's meaning on 2026-09-25.
 - Phase 4: the remap left 24 tokens that are not commit ids unchanged: decimals, session-id fragments, and a CSS colour. They are dispositioned by class in the private rollback note.
+- Phase 5: the orchestrator executed the phase in-session instead of through an implementation sub-agent. Every step was a user-gated remote action, and a separate reviewer verified the published state.
+- Phase 5: both releases report `targetCommitish` as `main`, but they still resolve by tag. The release-body check passes trivially because both bodies are empty.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
@@ -480,6 +487,29 @@ The 13 Info rows are confirmations, and the reviewer recommends no action for th
 - Both tags are annotated and keep their versions. Only `main` and the tags are refs, and every object is reachable.
 - Identities and dates are unchanged.
 - qvalidate passes.
+
+Cycle 2 was skipped under the user's 1-cycle cap.
+
+### 2026-09-25 -- Implementation Review (after Phase 5, persona: Security auditor)
+
+Implementation health: Green.
+5 findings (0 High, 0 Medium, 2 Low, 3 Info).
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Low | 3 of 17 regex patterns match no private data, so their zero-hit scans are not canary-proven. | Fixed -- already done at the Phase 4 review: synthetic samples for all 11 ASCII patterns matched with both methods. |
+| 2 | Low | The Phase 6 `npm test` criterion still says 18 files. | Fixed -- §9 states that every later "18 files" expectation reads as 19; Phase 6 is checked against 19. |
+| 3 | Info | The two old Release run pages still reference pre-rewrite tag commits. | Fixed -- already covered by Phase 6 step 5 (optional run deletion) and the exposure check. |
+| 4 | Info | Both releases report `targetCommitish` as `main`; they still resolve by tag. | Fixed -- recorded in §9 for future release edits. |
+| 5 | Info | The release-body check passes trivially because the bodies are empty. | Fixed -- recorded in §9. |
+
+The reviewer checked six things independently:
+- The refs match.
+- No run fired, and the workflow is active.
+- All 4 assets are unchanged.
+- The remote `main` tree equals the local `HEAD` tree.
+- The remote commit list (159 commits) is identical to local history.
+- The remote messages and tag annotations have zero term hits, confirmed with a canary.
 
 Cycle 2 was skipped under the user's 1-cycle cap.
 
