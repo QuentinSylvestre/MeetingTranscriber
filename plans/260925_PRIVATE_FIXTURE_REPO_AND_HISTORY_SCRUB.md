@@ -1,7 +1,7 @@
 # Private fixture repo for the real-data golden test, and a history scrub of the public repo
 
 > **Date**: 2026-09-25
-> **Status**: Draft
+> **Status**: In Progress
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Move the real-meeting golden test and all reference recordings/documents into a new private GitHub repo loaded through a public data-free stub, then rewrite the public repo's history so no real-meeting content or personal identifier remains in any reachable commit, tag, or commit message.
 > **Estimated effort**: ~1 day
@@ -153,14 +153,22 @@ Order is strict: nothing destructive runs until the private repo exists and is v
 4. Commit and push. Clone it fresh into a scratch dir and verify there.
 
 **Exit criteria**:
-- [ ] `gh repo view QuentinSylvestre/MeetingTranscriber-private --json visibility` reports `PRIVATE`.
-- [ ] The fresh scratch clone contains every item from SC 1.
-- [ ] In the fresh clone, the SHA-256 of `fixtures/golden-transcript.txt` equals the SHA-256 pinned inside `tests/summary-golden.private.ts`.
-- [ ] Each remuxed `.m4a` reports the same duration (ffmpeg `Duration:` line) and a single AAC stream, like its source `.mp4`.
-- [ ] `diff` between `tests/summary-golden.private.ts` and the public `tests/unit/summary-golden.test.ts` shows only the 4 import and URL lines.
-- [ ] A final grep with both term files over all public history returns hits only in files that `replacements.txt` or `strip-blob-ids.txt` covers, and in commit messages covered by `replacements.txt`.
-- [ ] `git -C <fresh clone> ls-files --eol fixtures transcripts` shows `i/lf w/lf` for every text file.
-- [ ] The scratch clone is deleted.
+- [x] `gh repo view QuentinSylvestre/MeetingTranscriber-private --json visibility` reports `PRIVATE`.
+- [x] The fresh scratch clone contains every item from SC 1.
+- [x] In the fresh clone, the SHA-256 of `fixtures/golden-transcript.txt` equals the SHA-256 pinned inside `tests/summary-golden.private.ts`.
+- [x] Each remuxed `.m4a` reports the same duration (ffmpeg `Duration:` line) and a single AAC stream, like its source `.mp4`.
+- [x] `diff` between `tests/summary-golden.private.ts` and the public `tests/unit/summary-golden.test.ts` shows only the 4 import and URL lines.
+- [x] A final grep with both term files over all public history returns hits only in files that `replacements.txt` or `strip-blob-ids.txt` covers, and in commit messages covered by `replacements.txt`.
+- [x] `git -C <fresh clone> ls-files --eol fixtures transcripts` shows `i/lf w/lf` for every text file.
+- [x] The scratch clone is deleted.
+
+Implementation (2026-09-25, code: none)
+Phase 1 populated the private repo with a single commit, pushed to its main branch. The commit contains the two golden fixtures, which are byte-identical to the backup copies. It also contains the private golden test module, which differs from the public test only in its 2 import lines and 2 fixture-URL lines. The rest of the reference material is 4 recordings, where each mp4 source was remuxed losslessly to m4a with a packet stream verified identical, plus 2 transcripts, 3 documents and the flattened 8-file v1 bundle. The commit also adds a `.gitattributes` that keeps every file byte-exact, a README, and the scrub rules: terms-literal.txt with 69 lines, terms-regex.txt with 16 lines, replacements.txt with 12 rules, and strip-blob-ids.txt with 1 id. The term lists were built from a seeded history scan, a capitalized-token pass and a 4-gram overlap pass against the private data, followed by a bounded manual read of related commit messages and plan and test lines. The final grep over all public history hits only 5 paths and 1 commit message. The first path is the golden test, which is covered by blob stripping. The other 4 are one archived plan with the leaked path, two versions of one plan, and one test file, all covered by replacement rules; the message is covered by a message rule. A simulated rewrite that drops the stripped blob and applies the rules to history rewrites 8 historical blobs and 1 commit message and leaves zero term hits. No rule touches `src/`, and no term matches a plan filename, a commit scope or a tag. In a fresh clone outside OneDrive, all 26 files were present and matched their sources, the transcript hash matched the pinned value, and all fixture and transcript files showed LF in both the index and the working tree. The clone and the scratch files holding private data were then deleted. All 8 Phase 1 exit criteria are ticked in this file. The file is left unstaged for the orchestrator to commit.
+
+Review fixes (2026-09-25, code: none)
+The Phase 1 review fixes were applied in the private repo as one extra commit, pushed to its main branch. For F1, the replacement value of one timestamp rule was changed to a fictional value. The new value has zero hits in the private fixtures, transcripts and documents (document text included), zero hits anywhere in public history, and no term hit. The rule is one global literal, so every public version of the affected test maps the same original value to the same replacement. For F2, the three names and one place name that appear only in private documents were added as forward-guard terms: 3 literal lines and 1 regex line, which brings the term files to 72 literal and 17 regex lines. Each has zero hits in public history, commit messages and scopes, plan filenames, tag contents and the current public plan file. For F3, the two paraphrased agenda items kept by user decision were added to the private README's keep-list with their reason. A re-run of the simulated rewrite still changes 8 historical blobs and 1 commit message and leaves zero term hits in blobs, messages and tags. The scrub files and README show LF in both the index and the working tree. The plan's exit-criteria ticks are unchanged.
+
+Tests: not run (no public code change in this phase). QA: SKIP (no `[QA]` annotation, no runtime surface).
 
 ### Phase 2: Public stub, resolver, and alias [QA]
 **Goal**: The public golden test becomes a data-free stub that runs the private module when present, and the eval harness uses the same resolver.
@@ -317,7 +325,14 @@ Order is strict: nothing destructive runs until the private repo exists and is v
 Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "16 files to 15" sentences are false-positive (historical accounts, still accurate). `src/main/summary/generate.ts` "golden meeting" size comment is false-positive (still true, since the meeting now lives in the private repo; it names nothing private).
 
 ## 9) Implementation Divergences from Plan
-<Reserved -- filled during implementation>
+
+- Phase 1: `scrub/` uses the four files named in Design Decisions (`terms-literal.txt`, `terms-regex.txt`, `replacements.txt`, `strip-blob-ids.txt`) instead of the single `terms.txt` in the Phase 1 layout line. Design Decisions is authoritative. The v1 bundle is flattened one level.
+- Phase 1: the visibility criterion was ticked on the orchestrator's `gh repo view` check (PRIVATE), not re-run by the sub-agent.
+- Phase 1: the long recording's remux reports a container duration 0.04 s shorter than its source. The copy-remux drops the source's start offset; the packet stream hash and packet count are identical. The short clip matches exactly.
+- Phase 1: plain `grep` in Git Bash needs `LC_ALL=C.UTF-8` to use the term files (non-ASCII patterns with `-i -F`). `git grep` is unaffected. Later phases set the locale.
+- Phase 1: a few generic French test sentences overlapping the fixture wording, and (user decision 2026-09-25) two paraphrased agenda items in `summary-render.test.ts`, are kept and listed in the private README's keep-list.
+- Phase 1: the fixture blob ids were added to the literal term list as a guard (full 40-character ids only). No `src/` rule exists, so no `src-rules-for-review` file was created.
+- Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
 
@@ -365,6 +380,21 @@ Standard effort, 3 personas (Architect with gap-critic lens, Senior engineer, Se
 | 26 | Low | Plan commit subjects exceed the 50-character limit (SE). | Fixed -- recorded as an accepted convention conflict in Follow-up item 7. |
 
 Finding 5: the rewrite changes commit SHAs, but SHAs written as text inside plan files and `memory/MEMORY.md` stay as they were, so they point at pre-rewrite commits that GitHub still serves. Some predate the 2026-09-19 purge. Q9 options: A accept, B remap current files after the rewrite, C blank them in every historical blob. The user chose B on 2026-09-25.
+
+### 2026-09-25 -- Implementation Review (after Phase 1, persona: Security auditor)
+
+Implementation health: Green.
+5 findings (0 High, 0 Medium, 5 Low).
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Low | One timestamp replacement's output value was itself a real timestamp from the private transcripts. | Fixed -- replaced with a fictional value with zero hits in private data, history and terms. |
+| 2 | Low | Term files lacked four names found only in the private documents, needed as a forward guard. | Fixed -- added as literal and regex terms after zero-hit checks on scopes and plan names. |
+| 3 | Low | `summary-render.test.ts` keeps paraphrases of two real agenda items without names, places or dates. | User: accepted -- user chose "Keep, document" on 2026-09-25; added to the private keep-list. |
+| 4 | Low | Phase 1 layout line names `scrub/terms.txt`, but Design Decisions and delivery use two term files. | Fixed -- recorded in §9 as a divergence. |
+| 5 | Low | The reviewer wrote two scratch files with private hit lines outside its allowed write path, then deleted them. | Fixed -- disclosed and deleted by the reviewer; no residue. |
+
+Reviewer independently simulated the rewrite over every reachable blob, message and tag: zero residual term hits, and no `src/` path touched. qvalidate phase-count passed (8 of 8). Cycle 2 skipped under the user's 1-cycle cap.
 
 ## Harness Improvement Opportunities
 
