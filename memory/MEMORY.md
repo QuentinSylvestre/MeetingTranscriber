@@ -8,13 +8,19 @@
 **How to apply**: For any new cost-surfacing UI or API-cost feature, query/derive the exact per-request cost (credits before/after, or a dedicated cost-query call) rather than an estimate.
 **Source**: session e2d6bcee-bbb8-497a-a758-1fcf8d462556 | **Verified**: 2026-09-22 (sweep, anchor-reopen)
 
-### User always overrides /qdev to 1 qreview cycle per phase
+### In Claude Code, the user overrides /qplan and /qdev to 1 qreview cycle per phase
 
-**Why**: Observed in 2/2 /qdev invocations for this project; a recurring (default, override) pair. The archived plan's own Harness section independently flags the cost of this override (unverified auto-fixes until Step 9).
-**How to apply**: Default to 1 qreview cycle per phase for /qdev in this project unless the user says otherwise; consider noting this as a project-level default in AGENTS.md.
-**Source**: session 015bcce6-ca7a-4076-8989-c86683a6a81a + session e2d6bcee-bbb8-497a-a758-1fcf8d462556 | **Verified**: 2026-09-22 (sweep, anchor-reopen)
+**Why**: Observed in 3/3 /qdev invocations and the matching /qplan run for this project; a recurring (default, override) pair. The user scoped it to Claude Code on 2026-09-28: Kiro sessions run qreview at maximum effort.
+**How to apply**: In Claude Code, default to 1 qreview cycle per phase for /qplan and /qdev in this project unless the user says otherwise; in Kiro, keep the maximum-effort review default.
+**Source**: session 015bcce6-ca7a-4076-8989-c86683a6a81a + session e2d6bcee-bbb8-497a-a758-1fcf8d462556 + plan 260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB § 9 (Process line) | **Verified**: 2026-09-28 (human:quentin, plan-scan)
 
 ## Decision
+
+### User declined a GitHub Support purge after the history rewrite, twice
+
+**Why**: The user accepted the residual on GitHub's side at Q2 on 2026-09-25 and reconfirmed on 2026-09-28 ("B without a re-check, it's ok") after a Full council voted 4-0 for a purge; re-proposing without new facts costs a round-trip.
+**How to apply**: Do not re-propose a GitHub Support purge for this repo's rewritten history unless the exposure facts change; the private repo's `scrub/exposure-check.md` holds the details.
+**Source**: plan 260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB § Post-Implementation Review, finding 1 | **Verified**: 2026-09-28 (human:quentin)
 
 ### No-license public distribution for MeetingTranscriber repo
 
