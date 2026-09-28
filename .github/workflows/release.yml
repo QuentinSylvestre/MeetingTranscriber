@@ -1,3 +1,4 @@
+# Builds and publishes a GitHub release when a version tag (vX.Y.Z) is pushed.
 name: Release
 
 on:
