@@ -1,7 +1,7 @@
 # Private fixture repo for the real-data golden test, and a history scrub of the public repo
 
 > **Date**: 2026-09-25
-> **Status**: In Progress
+> **Status**: In Progress — implementation complete; Release workflow re-registration awaits the final push
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Move the real-meeting golden test and all reference recordings/documents into a new private GitHub repo loaded through a public data-free stub, then rewrite the public repo's history so no real-meeting content or personal identifier remains in any reachable commit, tag, or commit message.
 > **Estimated effort**: ~1 day
@@ -67,7 +67,7 @@ Code, cited by file and a unique string (line numbers drift):
 
 Runtime observations (re-run them; they expire):
 
-- 2026-09-25, `gh api repos/QuentinSylvestre/MeetingTranscriber/git/blobs/<old fixture blob>` returned the full real-transcript blob. The pre-purge commit is also still served. The repo is public, with 0 forks, 0 stars, no PRs, and `traffic/clones` showing 45 clones from 22 unique cloners over 14 days.
+- 2026-09-25, a read-only exposure check of the repo's old objects was run; its results are recorded privately. The repo is public, with no forks and no PRs.
 - 2026-09-25, disposable vitest probes (scratch files, deleted afterwards):
   - A file outside the repo, run with `--dir`, resolves bare imports (`jszip`, `vitest`) and absolute `src/` imports.
   - A public stub that does top-level `await import(pathToFileURL(entry).href)` of an external module using an `@src` alias reports `1 passed` with the module present and `1 skipped (1)` without it.
@@ -347,7 +347,7 @@ Tests: pass (19 of 19 files). QA: SKIP (no `[QA]` annotation; local cleanup and 
 
 ## 7) Verification
 
-- `npm test` from the repo root (see `AGENTS.md` Test Execution for the Windows `npm_config_script_shell` workarounds). Expect 18 files: all passing with the sibling present, `17 passed | 1 skipped` when it is absent.
+- `npm test` from the repo root (see `AGENTS.md` Test Execution for the Windows `npm_config_script_shell` workarounds). Expect 19 files (18 before the Phase 2 divergence): all passing with the sibling present, `18 passed | 1 skipped` when it is absent.
 - History scan: `terms-literal.txt` with `-F -i` and `terms-regex.txt` with `-E -i`, over `git grep … $(git rev-list --all)`, `git log --all --format=%B`, and tag contents, all empty.
 - Tree identity across the rewrite: `git rev-parse HEAD^{tree}` equals the recorded `PRE_TREE`.
 - Remote: `git ls-remote origin`, `gh release view <tag> --json assets`.
@@ -387,18 +387,22 @@ Doc-impact dispositions (2026-09-25 scan): `AGENTS.md` and `vitest.config.ts` "1
 - Phase 4: the remap left 24 tokens that are not commit ids unchanged: decimals, session-id fragments, and a CSS colour. They are dispositioned by class in the private rollback note.
 - Phase 5: the orchestrator executed the phase in-session instead of through an implementation sub-agent. Every step was a user-gated remote action, and a separate reviewer verified the published state.
 - Phase 5: both releases report `targetCommitish` as `main`, but they still resolve by tag. The release-body check passes trivially because both bodies are empty.
-- Phase 6: the exposure check found the 3 stripped blobs and the old remote `main` commit still served by SHA. This is the residual accepted in Q2. `PRE_HEAD` was never pushed, so the old remote `main` stood in as the "pre-rewrite commit" probe. Details are in the private `scrub/exposure-check.md`.
+- Phase 6: exposure check recorded privately on 2026-09-25 (`scrub/exposure-check.md`). `PRE_HEAD` was never pushed, so the old remote `main` stood in as the "pre-rewrite commit" probe.
+- Phase 3 note: the scrub commit's file count differs after the rewrite, because the rewrite applied the same replacements to history, so the post-rewrite commit shows only the doc edits and `todo.md` deletion.
+- Step 9: the final review found the residual exposure broader than Q2 assumed (details recorded privately). A Full council voted 4-0 to file a GitHub Support purge; the user chose to keep accepting the residual, with no scheduled re-check (2026-09-28).
+- Step 9: after the Phase 6 run deletions, GitHub reports the Release workflow as `deleted` and refuses `gh workflow enable`. A one-line comment added to `release.yml` re-registers it when pushed (user choice, 2026-09-28).
 - Phase 6: the per-phase review ran after the final push instead of before it, because the push is one of this phase's exit criteria. The Step 9 final review covers it.
 - Process: user cycle-cap override "1 qreview cycle per phase" (default: up to 2 cycles), recorded per the Continuous Improvement rule.
 
 ## Follow-up Work (Deferred)
 
-1. **Old objects on GitHub.** The pre-purge fixture blobs and the old golden-test blob may stay fetchable by SHA until GitHub garbage-collects them, and pre-purge clones cannot be recalled. The user declined a Support purge (Q2). Re-run the Phase 6 exposure check later if needed.
+1. **Old objects on GitHub.** The pre-purge fixture blobs and the old golden-test blob may stay fetchable by SHA until GitHub garbage-collects them, and pre-purge clones cannot be recalled. The user declined a Support purge (Q2) and reconfirmed that on 2026-09-28 after the final review, with no scheduled re-check. Re-run the Phase 6 exposure check if that changes.
 2. **Real-derived local output under gitignored `out/municipal*`.** Not in Q8's cleanup set. The user decides whether to move it to the private repo or delete it.
 3. **Original reference-recording folder in Downloads.** The user deletes it (Q8).
 4. **Synthetic public golden fixture (Tier 1).** Deferred. Reopen if the golden test should run on public clones or in CI.
 5. **Git LFS.** Adopt it in the private repo the first time a recording would exceed 100 MB.
 6. **Future writes to `plans/` and `memory/`.** `/qdream` and later plans write into this public repo from session transcripts. The proposed `AGENTS.md` rule covers it; a pre-push hook grepping the private term files would enforce it (not in scope).
+8. **OneDrive recycle bin.** The deleted backup folder stays in OneDrive's recycle bin until the user empties it.
 7. **Commit subjects over 50 characters.** The plan-slug scope convention makes this plan's subjects exceed the 50-character governance limit; accepted as a convention conflict.
 
 ## Review Log
@@ -527,6 +531,45 @@ The reviewer checked six things independently:
 - The remote messages and tag annotations have zero term hits, confirmed with a canary.
 
 Cycle 2 was skipped under the user's 1-cycle cap.
+
+### 2026-09-28 -- Post-Implementation Review
+
+Overall implementation health: Green.
+Personas: Senior engineer, Security auditor.
+16 findings (0 High, 3 Medium, 7 Low, 6 Info).
+QA verification: PASS (2 surfaces verified, 11 probes executed: 8 resolver cases, and the stub with the sibling absent, incomplete, and present).
+
+#### Test execution summary
+
+| Phase | Tests | QA | Notes |
+|---|---|---|---|
+| 1: Private repo | not_run | SKIP | No public code; private-repo checks only. |
+| 2: Stub and resolver | pass | PASS | 19 of 19 after the resolver test. |
+| 3: Scrub HEAD and docs | pass | SKIP | 19 of 19. |
+| 4: Rewrite history | pass | SKIP | 19 of 19 after the rewrite. |
+| 5: Publish | not_run | SKIP | Remote refs only; pushed tree identical to the tested one. |
+| 6: Cleanup | pass | SKIP | 19 of 19 after cleanup. |
+
+| # | Severity | Finding (one line) | Resolution (one line) |
+|---|---|---|---|
+| 1 | Medium | [Security] Public activity and events APIs list the force-pushes, so old objects are discoverable without a known SHA. | User: accepted -- after a 4-0 council for a Support purge, the user kept the residual with no re-check (2026-09-28). |
+| 2 | Medium | [Security] GitHub reports the Release workflow as `deleted`; `gh workflow enable` is refused. | Fixed -- one-line comment in `release.yml` re-registers it on push; user chose this path (2026-09-28). |
+| 3 | Medium | [Security] No automated pre-push term check exists; the rule was manual only. | User: accepted -- user declined the pre-push hook follow-up (2026-09-28); rule moved to its own section with grep guidance. |
+| 4 | Low | [Security] `/qdream` may not read a rule placed under Test Execution. | Fixed -- user approved moving it to a `## Private Data` section in `AGENTS.md` (2026-09-28). |
+| 5 | Low | [Security] Local scratch files outside the repo held private terms. | Fixed -- user approved deletion (2026-09-28); session transcripts themselves cannot be removed by the agent. |
+| 6 | Low | [Security] Accepted residuals: OneDrive-synced private clone, recycle bin, `out/municipal*`. | Fixed -- all three tracked in Follow-up Work (items 2, 8, and the OneDrive deferral). |
+| 7 | Low | [Security] Public plan text pointed to what is still served and gave clone counts. | Fixed -- Current State and §9 reduced to "recorded privately". |
+| 8 | Low | [Senior] "18 files" statements remained in current-facing plan sections. | Fixed -- §7 updated; Intent left unmodified per `/qdev`, §9 records the 19-file count. |
+| 9 | Low | [Senior] The private README omitted three hardened resolver rules. | Fixed -- private README updated and pushed. |
+| 10 | Low | [Senior] The resolver's unset-variable branch has no automated test. | User: accepted -- user did not select the follow-up for an injectable root (2026-09-28). |
+| 11 | Info | [Senior] The private module path was written in both the resolver and the stub. | Fixed -- resolver exports `privateModulePath()`, used by the stub. |
+| 12 | Info | [Senior] The eval harness could echo an absolute path when the transcript is missing. | Fixed -- existence check exits 4 with a path-free message before any key read. |
+| 13 | Info | [Senior] The Phase 3 note's file count differs from the post-rewrite commit. | Fixed -- §9 explains the rewrite folded the replacement edits into history. |
+| 14 | Info | [Senior] No per-phase review entry existed for Phase 6. | Fixed -- this review covers Phase 6: fsck clean, metadata gone, fixtures removed, 19 of 19. |
+| 15 | Info | [Security] Five pre-project commit messages carry a banned session trailer. | User: accepted -- report only; not rewritten (predates this project). |
+| 16 | Info | [Security] All per-phase security findings re-checked independently. | Fixed -- confirmed; no open rows. |
+
+Both reviewers independently re-verified the live state: zero term hits across all history, messages and tags; remote refs equal local; releases intact; local leftovers gone; private repo PRIVATE. The council for finding 1 (Full tier: assumption challenger, 3 advocates, 3 prosecutors, 4 jurors) voted A 4-0; its sensitivity note flagged that Support's willingness to purge non-credential personal data is unverified. Code auto-fixes were committed as one `refactor` commit (19 of 19 tests, `node --check` on the eval harness). Cycle 2 skipped under the user's 1-cycle cap. QA: the Phase 2 resolver was driven directly at Phase 2 and again by the Security reviewer at Step 9 (empty value, inside-repo, missing module, two-dot child), all throwing path-free errors.
 
 ## Harness Improvement Opportunities
 
