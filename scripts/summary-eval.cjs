@@ -55,7 +55,13 @@ app.whenReady().then(async () => {
     app.exit(4);
     return;
   }
-  const transcript = fs.readFileSync(path.join(dir, 'fixtures', 'golden-transcript.txt'), 'utf8');
+  const transcriptFile = path.join(dir, 'fixtures', 'golden-transcript.txt');
+  if (!fs.existsSync(transcriptFile)) {
+    console.error('PRIVATE_FIXTURES_ERROR', 'private fixture repo has no fixtures/golden-transcript.txt');
+    app.exit(4);
+    return;
+  }
+  const transcript = fs.readFileSync(transcriptFile, 'utf8');
   let key;
   try { key = readKey(); } catch (error) { console.error('KEY_ERROR', error.message); app.exit(3); return; }
 

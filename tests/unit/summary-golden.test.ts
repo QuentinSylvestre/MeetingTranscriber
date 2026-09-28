@@ -4,12 +4,11 @@
 // import is deliberately not wrapped in try/catch.
 import { describe, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
-import path from 'node:path';
-import { privateDir } from '../../scripts/private-fixtures.cjs';
+import { privateDir, privateModulePath } from '../../scripts/private-fixtures.cjs';
 
 const dir = privateDir();
 if (dir) {
-  await import(pathToFileURL(path.join(dir, 'tests', 'summary-golden.private.ts')).href);
+  await import(pathToFileURL(privateModulePath(dir)).href);
 } else {
   describe.skip('golden municipal summary (private repo not found)', () => {
     it('requires the private fixture repo', () => {});

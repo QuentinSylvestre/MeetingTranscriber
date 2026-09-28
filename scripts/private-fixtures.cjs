@@ -51,4 +51,9 @@ function privateDir() {
   return sibling;
 }
 
-module.exports = { privateDir };
+/** Path of the private test module inside a directory returned by privateDir(). */
+function privateModulePath(dir) {
+  return path.join(dir, MODULE);
+}
+
+module.exports = { privateDir, privateModulePath };
