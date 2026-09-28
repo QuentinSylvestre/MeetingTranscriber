@@ -22,11 +22,12 @@
 **How to apply**: Do not re-propose a GitHub Support purge for this repo's rewritten history unless the exposure facts change; the private repo's `scrub/exposure-check.md` holds the details.
 **Source**: plan 260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB § Post-Implementation Review, finding 1 | **Verified**: 2026-09-28 (human:quentin)
 
-### No-license public distribution for MeetingTranscriber repo
+### Public MeetingTranscriber repo is licensed PolyForm Noncommercial 1.0.0
 
-**Why**: User deliberately chose all-rights-reserved over MIT/Apache/Polyform for the public GitHub repo, to allow personal use but block commercial use by others.
-**How to apply**: When touching LICENSE/README/distribution-facing files, preserve the no-license/all-rights-reserved posture; do not add an OSS license without asking.
-**Source**: session 6d1c2c1f-f60b-4461-9724-8a5b5ae7cb3b | **Verified**: 2026-09-22 (sweep, anchor-reopen)
+**Why**: The user wanted the public GitHub repo to allow personal use but block commercial use by others; "no license" was only the repo-creation dropdown choice, and PolyForm Noncommercial 1.0.0 was committed as the licence (`LICENSE.md` line 1, commit bd95fda, 2026-09-19).
+**How to apply**: When touching `LICENSE.md`, `package.json`'s `license` field, the README or other distribution-facing files, keep PolyForm Noncommercial 1.0.0; do not switch to an OSI licence (MIT/Apache) without asking.
+**Source**: session 6d1c2c1f-f60b-4461-9724-8a5b5ae7cb3b + jsonl L104 + `LICENSE.md` L1 (bd95fda) | **Verified**: 2026-09-28 (sweep, artifact-check)
+**Evidence-quote**: "or should I not pick a license and just commit a polyform license file in our first commit?"
 
 ## Pattern
 
@@ -35,6 +36,13 @@
 **Why**: Before finalizing the summary feature's model, the user ran iterative, cost-capped empirical tests across multiple candidate models/effort levels rather than deciding from specs alone.
 **How to apply**: For future LLM-model-selection decisions in this project, propose a capped-cost empirical test matrix (model x effort x repetitions) before committing, and surface cost/quality/comments per cell.
 **Source**: session 84e3cb29-b4a1-42a2-b778-d4e21eabcd91 | **Verified**: 2026-09-22 (sweep, anchor-reopen)
+
+### Force-pushing release tags re-triggers release.yml — disable the Release workflow around any tag rewrite
+
+**Why**: The tag-triggered Release workflow rebuilds and republishes releases and deletes "duplicate" ones, so force-pushing a version tag would replace the assets the auto-updater reads; the history-scrub plan's review caught this before the push.
+**How to apply**: Before any operation that moves or re-pushes a version tag, record the release asset ids, run `gh workflow disable Release`, push, re-enable it, then confirm the asset ids are unchanged.
+**Source**: plan 260928-1133_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB § Phase 5 + session 5e26e1dd-0628-4bff-8428-50d4d1ab63d0 L635 | **Verified**: 2026-09-28 (sweep, anchor-reopen)
+**Evidence-quote**: "**Force-pushing the tags would have re-run the Release workflow.** That workflow rebuilds and republishes the releases and deletes \"duplicate\" ones, which would replace the files auto-update checks."
 
 ### [improvement_signal] qvalidate commit-pairing check only matches first "phase N" occurrence
 
@@ -56,13 +64,6 @@
 **Why**: A Documentation Updates row worded conditionally ("update only if X") that resolved to no-change-needed reads identically to a genuinely-unaddressed requirement — both FAIL the same mechanical check (whether a commit touched the named file). Independently confirmed: qdev/SKILL.md's ≤25-word Finding/Resolution cap makes this ambiguity worse since there's no room to disambiguate inline.
 **Frequency**: 1 (below threshold) | **Sessions**: plan 260919-0933_TRANSCRIBE_DEFAULT_PAGE_COST_TRACKING_DOCX_PERSISTENCE era | **Last observed**: 2026-09-19
 **Evidence-quote**: "`qvalidate`'s `doc-updates` check can't distinguish \"this Documentation Updates row states a requirement that was never addressed\" from \"this row states a conditional check that was actually run and resolved to no-change-needed\""
-
-### [improvement_signal] [QA] annotation on scaffold-only phases wastes a /qqa invocation
-
-**Target**: `shared/skills/qplan/TEMPLATES.md`
-**Why**: A phase annotated `[QA]` had no independently-exercisable automated runtime surface (pure scaffold + spike); `/qqa` returned SKIP with an annotation-mismatch note. Suggested: document that `[QA]` should be omitted from phases whose only verifiable output is "app opens" or "script runs successfully."
-**Frequency**: 1 (below threshold) | **Sessions**: plan 260913-2146 | **Last observed**: 2026-09-13
-**Evidence-quote**: "Phase 1 was annotated `[QA]` but has no independently-exercisable automated runtime surface (it is a pure scaffold + spike). QA returned SKIP with an annotation-mismatch note."
 
 ### [improvement_signal] /qexplore one-question-at-a-time rule enforced only by instruction, not mechanically
 
