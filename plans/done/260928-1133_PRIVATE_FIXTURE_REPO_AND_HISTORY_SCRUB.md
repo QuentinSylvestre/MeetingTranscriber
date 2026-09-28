@@ -1,12 +1,31 @@
 # Private fixture repo for the real-data golden test, and a history scrub of the public repo
 
 > **Date**: 2026-09-25
-> **Status**: In Progress — implementation complete; Release workflow re-registration awaits the final push
-> **Last Updated**: <set by /qclose at archival>
+> **Status**: Complete
+> **Last Updated**: 2026-09-28 11:33
 > **Scope**: Move the real-meeting golden test and all reference recordings/documents into a new private GitHub repo loaded through a public data-free stub, then rewrite the public repo's history so no real-meeting content or personal identifier remains in any reachable commit, tag, or commit message.
 > **Estimated effort**: ~1 day
 
 > **Public-file rule for this plan.** This file lives in a public repo and survives the rewrite. It must never contain a real name, quote, place name, meeting date, figure, fixture/blob SHA, pre-rewrite commit SHA, or the leaked path itself. Those live only in the private repo (term list, replacement rules, SHA-check list, rollback note). The rule also covers the Review Log, §9, every commit message this plan produces, and the output of every agent or reviewer working on it; state it in their briefs. Never paste test output, error messages, stack traces, or absolute paths into any of them; summarize as counts or pass/fail. During Phases 1-4, progress entries in this file carry no commit SHAs; Phase 6 records them afterwards using rewritten SHAs only.
+
+## Completion Summary
+
+All six phases and the final review are complete and pushed. The public repo's reachable history, messages and tags carry zero private terms. The real-data golden test runs from the private sibling repo, and the suite is 19 files. The Release workflow was re-registered and is active. The user accepted the remaining exposure on GitHub's side (old objects still served, and public activity listings) on 2026-09-28, with no re-check scheduled.
+
+### Acknowledged at archival
+
+- Divergence (Phase 1): the long recording's remux reports a container duration 0.04 s shorter, with an identical packet stream. **Accepted**.
+- Divergence (Phase 1): fixture blob ids were added to the literal term list as guard terms. **Accepted**.
+- Divergence (Phase 4): filter-repo ran as `python -m git_filter_repo`, the fallback the plan anticipated. **Accepted**.
+- Divergence (Phase 4): the permission classifier blocked the sub-agent from re-adding `origin`; the orchestrator re-added it on the user's instruction, without fetching. **Accepted**.
+- Divergence (Phase 5): the orchestrator ran the user-gated publish phase in-session, and a separate reviewer verified it. **Accepted**.
+- Divergence (process): the user's cap of 1 review cycle per phase replaced the default of up to 2. **Accepted**.
+- Harness 1 (`/qexplore` has no content-sweep trio for data or privacy audits). **Accepted (harness opportunity)**: recorded for `/qdream` harvest.
+- Harness 2 (`/qexplore` writes project files without considering repo visibility). **Promoted**: `/qexplore` Step 3 now asks, for every new project file, whether to write it to the workspace `plans/` or to the private playbook store. `memory-rules.md § Resolution contract` step 5 was updated to match.
+- Harness 3 (whether a council gates `/qexplore` trade-off questions). **Accepted (harness opportunity)**: recorded for `/qdream` harvest.
+- Harness 4 (`/qplan` has no way to declare an out-of-band private contract location). **Accepted (harness opportunity)**: recorded for `/qdream` harvest.
+- Harness 5 (`/qdev` `code: <sha>` convention conflicts with a no-SHA public-file rule). **Accepted (harness opportunity)**: recorded for `/qdream` harvest.
+- Harness 6 (classifier-prone sub-agent steps are not pre-surfaced by `/qdev`). **Accepted (harness opportunity)**: recorded for `/qdream` harvest.
 
 ---
 
