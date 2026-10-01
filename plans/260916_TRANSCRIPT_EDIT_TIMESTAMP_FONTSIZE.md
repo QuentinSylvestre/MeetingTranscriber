@@ -1,7 +1,7 @@
 # Transcript Edit, Timestamp Toggle, Font Size
 
 > **Date**: 2026-09-16
-> **Status**: In Progress  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Status**: In Progress — implementation complete, Phase 2 and 3 runtime QA not recorded  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
 > **Last Updated**: <set by /qclose at archival>
 > **Scope**: Three user-facing features: inline transcript text editing with reset, copy/export without timestamp preference, app-wide font size preference
 > **Estimated effort**: 1-2 days
@@ -796,6 +796,8 @@ Manual checklist:
 ## 9) Implementation Divergences from Plan
 
 1. **DB migration strategy (Phase 1)**: Plan specified big-bang replacement (delete `db.sqlite`, re-create from schema). Instead, performed in-place `ALTER TABLE … ADD COLUMN original_text` + `UPDATE` backfill on the existing dev database. Rationale: user had 3 completed transcription jobs (438 turns) they did not want to lose. All existing turns have `original_text = text` (correct initial state). Behaviorally identical to a fresh schema for all new writes. Backup saved at `db.sqlite.bak_20260916_182200`.
+
+2. **Two-tier font scaling (Phase 3, after its review, code: 92d1b73)**: Phase 3 added one variable, `--font-size-base`, and scaled only transcript text and sidebar labels. Commit `92d1b73` then added `--font-size-ui` (`--font-size-base` minus 1px) for UI chrome (buttons, inputs, labels, badges, job titles, speaker names, `h3`), so the preference also applies to the Settings view chrome. `App.tsx` sets both variables on mount and `SettingsView` sets both on change and load. The Phase 3 review (above) predates this commit and did not cover it. No runtime QA of it is recorded here.
 
 ## Follow-up Work (Deferred)
 
