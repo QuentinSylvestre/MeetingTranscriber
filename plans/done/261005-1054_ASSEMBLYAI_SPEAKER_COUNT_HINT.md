@@ -313,7 +313,7 @@ The user ran the manual QA checklist in the real Electron app and reported "I ra
 
 ### Acknowledged at archival
 
-- Accepted (harness opportunity): `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
+- Skipped (harness opportunity): obsolete — the suggested change already exists as `shared/skills/qbrowser-test/SKILL.md` § "Electron apps (non-Playwright fallback)" (a `REMOTE_DEBUGGING_PORT` CDP attach), promoted 2026-09-19, three days after this plan was implemented; corrected 2026-10-05 after first being recorded as Accepted. Original item: `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
 
 ## Implementation Divergences from Plan
 
@@ -326,7 +326,7 @@ The user ran the manual QA checklist in the real Electron app and reported "I ra
 ## Harness Improvement Opportunities
 
 None observed during `/qexplore` or `/qplan` for this project.
-- `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface (no Windows UI-automation tool, and the browser-automation tooling attaches to Chrome tabs, not arbitrary Electron `BrowserWindow`s) — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
+- [Obsolete as of 2026-10-05: already resolved by `shared/skills/qbrowser-test/SKILL.md` § "Electron apps (non-Playwright fallback)", promoted 2026-09-19; see Acknowledged at archival.] `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface (no Windows UI-automation tool, and the browser-automation tooling attaches to Chrome tabs, not arbitrary Electron `BrowserWindow`s) — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
 
 ## Review Log
 
