@@ -1,5 +1,7 @@
 import React from 'react';
 import { useI18n } from '../hooks/useI18n';
+import { useRecorderSnapshot } from '../hooks/useRecorder';
+import { formatDuration } from '../hooks/recorderSession';
 
 type View = 'record' | 'upload' | 'progress' | 'transcript' | 'history' | 'settings';
 
@@ -11,6 +13,11 @@ interface SidebarProps {
 
 export default function Sidebar({ currentView, onNavigate, isJobActive }: SidebarProps): React.ReactElement {
   const { t } = useI18n();
+  const recorder = useRecorderSnapshot();
+  const recordingActive = recorder.status === 'recording' || recorder.status === 'paused';
+  // A recording is the one thing the user cannot afford to forget about or not notice
+  // failing while they are in another menu, so it is shown on every view.
+  const noAudio = recordingActive && (recorder.inputLost || recorder.inputSilent);
 
   const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
     { id: 'record',   label: t('nav_record'),   icon: '⏺' },
@@ -49,7 +56,21 @@ export default function Sidebar({ currentView, onNavigate, isJobActive }: Sideba
 
       {/* Footer */}
       <div className="sidebar-footer">
-        {isJobActive ? (
+        {recordingActive ? (
+          <button
+            className="sidebar-item"
+            onClick={() => onNavigate('record')}
+            style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: recorder.status === 'paused' ? 'var(--warning)' : 'var(--error)' }}>
+              <span className="sidebar-status-dot" style={{ background: recorder.status === 'paused' ? 'var(--warning)' : 'var(--error)' }} />
+              {recorder.status === 'paused' ? t('sidebar_recording_paused') : t('sidebar_recording')} {formatDuration(recorder.durationMs)}
+            </span>
+            {noAudio && (
+              <span role="alert" style={{ fontSize: 12, color: 'var(--error)' }}>{t('sidebar_recording_no_audio')}</span>
+            )}
+          </button>
+        ) : isJobActive ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--warning)' }}>
             <div className="sidebar-status-dot" style={{ background: 'var(--warning)' }} />
             {t('sidebar_job_active')}

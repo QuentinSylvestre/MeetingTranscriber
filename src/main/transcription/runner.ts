@@ -16,6 +16,24 @@ let _abortController: AbortController | null = null;
 
 export function getActiveJobId(): string | null { return _activeJobId; }
 
+const MIN_JOB_TIMEOUT_MS = 90 * 60 * 1000;
+/** Recordings are 128 kbps MP3: 16,000 bytes per second of audio. */
+const RECORDING_BYTES_PER_SECOND = 16_000;
+/** A job may take this many times the audio's length before it is considered stuck. */
+const TIMEOUT_AUDIO_MULTIPLE = 1.5;
+
+/**
+ * The job's overall deadline. The flat 90 minutes it used to be sits under the length of
+ * a long meeting: a 4-hour recording would be aborted partway through no matter how
+ * healthy the provider was. Audio length is estimated from the file size at the
+ * recorder's bitrate; for other formats that overestimates (WAV is ~5x larger per second),
+ * which only makes the deadline more generous, never tighter than 90 minutes.
+ */
+export function computeJobTimeoutMs(fileBytes: number): number {
+  const estimatedAudioMs = (fileBytes / RECORDING_BYTES_PER_SECOND) * 1000;
+  return Math.max(MIN_JOB_TIMEOUT_MS, Math.round(estimatedAudioMs * TIMEOUT_AUDIO_MULTIPLE));
+}
+
 export function cancelJob(): void {
   _abortController?.abort();
 }
@@ -47,11 +65,14 @@ export async function startJob(opts: StartJobOptions): Promise<void> {
   _abortController = new AbortController();
   const { signal } = _abortController;
 
-  // 90-minute global timeout (plan requirement)
+  // Global timeout: 90 minutes, or longer for a long recording (see computeJobTimeoutMs).
+  let fileBytes = 0;
+  try { fileBytes = fs.statSync(audioPath).size; } catch { /* unreadable: the chunker will report it */ }
+  const timeoutMs = computeJobTimeoutMs(fileBytes);
   const jobTimeout = setTimeout(() => {
-    log.warn(`Job ${jobId} exceeded 90-minute timeout, aborting`);
+    log.warn(`Job ${jobId} exceeded ${Math.round(timeoutMs / 60000)}-minute timeout, aborting`);
     _abortController?.abort();
-  }, 90 * 60 * 1000);
+  }, timeoutMs);
 
   // Create DB job record
   createJob({

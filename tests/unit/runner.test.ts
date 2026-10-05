@@ -523,3 +523,22 @@ describe('runner cost/duration bookkeeping', () => {
     expect(payloads.every(p => p.costUsd === undefined)).toBe(true);
   });
 });
+
+describe('runner job timeout', () => {
+  // Observed risk: a flat 90-minute abort sits under the length of a long meeting, so a
+  // 2-4 hour recording would be cancelled partway through however healthy the provider was.
+  const MIN = 90 * 60 * 1000;
+
+  it('never drops below 90 minutes, even for an empty or tiny file', async () => {
+    const { computeJobTimeoutMs } = await import('../../src/main/transcription/runner');
+    expect(computeJobTimeoutMs(0)).toBe(MIN);
+    expect(computeJobTimeoutMs(10 * 1024 * 1024)).toBe(MIN); // ~11 min of audio
+  });
+
+  it('scales with the length of a long recording', async () => {
+    const { computeJobTimeoutMs } = await import('../../src/main/transcription/runner');
+    const fourHoursOfMp3 = 4 * 3600 * 16_000; // 128 kbps
+    expect(computeJobTimeoutMs(fourHoursOfMp3)).toBe(6 * 3600 * 1000); // 1.5x the audio
+    expect(computeJobTimeoutMs(fourHoursOfMp3)).toBeGreaterThan(MIN);
+  });
+});

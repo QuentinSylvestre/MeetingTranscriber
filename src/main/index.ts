@@ -4,7 +4,7 @@ import { initLogger } from './logger';
 import { registerAllHandlers } from './ipc/index';
 import { registerAppScheme, registerAppProtocol } from './ipc/protocol';
 import { closeDb } from './db/index';
-import { registerLifecycleHandlers } from './app-lifecycle';
+import { registerLifecycleHandlers, registerWindowCloseGuard } from './app-lifecycle';
 import { initAutoUpdater } from './updater';
 
 // Logger declared at module scope but initialized after app is ready (F9)
@@ -60,9 +60,10 @@ if (!gotLock) {
     registerAllHandlers(); // Register IPC before creating window (includes recoverInterruptedJobs)
     registerAppProtocol(); // Register app:// protocol for audio file access (Phase 8)
     log.info('App ready, creating window');
-    createWindow();
+    const mainWindow = createWindow();
     // Wire close guards after window creation so the getter returns the live window
     const getMainWindow = () => BrowserWindow.getAllWindows()[0] ?? null;
+    registerWindowCloseGuard(mainWindow);
     registerLifecycleHandlers(getMainWindow);
     initAutoUpdater(getMainWindow);
     // macOS: re-open window when dock icon is clicked (no-op on Windows) (F11)
@@ -89,7 +90,10 @@ if (!gotLock) {
     if (process.platform !== 'darwin') app.quit();
   });
 
-  app.on('before-quit', () => {
+  // `will-quit`, not `before-quit`: a before-quit listener runs even when another listener
+  // cancels the quit (the recording and transcription guards do exactly that), which closed
+  // the database under an app that then stayed open.
+  app.on('will-quit', () => {
     closeDb();
   });
 }

@@ -4,7 +4,8 @@ import { useSettings } from '../hooks/useSettings';
 import { useI18n } from '../hooks/useI18n';
 import { useSpeakerCountHint } from '../hooks/useSpeakerCountHint';
 import type { SpeakerCountMode } from '../hooks/useSpeakerCountHint';
-import type { RecorderErrorCode } from '../hooks/useRecorder';
+import type { RecorderError, RecorderErrorCode } from '../hooks/useRecorder';
+import { formatDuration } from '../hooks/recorderSession';
 import type { I18nKey } from '../i18n';
 import { PROVIDER_NAMES, PROVIDER_LABELS, SECRET_KEY_NAMES } from '../../shared/ipc-types';
 import type { ProviderName } from '../../shared/ipc-types';
@@ -19,15 +20,16 @@ const RECORDER_ERROR_KEY: Record<RecorderErrorCode, I18nKey> = {
   mic_denied: 'record_error_mic_denied',
   mic_busy: 'record_error_mic_busy',
   audio_engine: 'record_error_audio_engine',
+  start_failed: 'record_error_start_failed',
+  stop_failed: 'record_error_stop_failed',
+  write_failed: 'record_error_write_failed',
+  control_failed: 'record_error_control_failed',
   unknown: 'record_error_unknown',
 };
 
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+/** The translated sentence for an error, with the specifics a user can act on filled in. */
+function describeRecorderError(err: RecorderError, t: (key: I18nKey) => string): string {
+  return t(RECORDER_ERROR_KEY[err.code]).replace('{{detail}}', err.detail ?? '');
 }
 
 export default function RecordView({ onJobStarted }: RecordViewProps): React.ReactElement {
@@ -40,13 +42,15 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
   const [selectedLanguage, setSelectedLanguage] = useState<'fr'|'en'|'auto'>('fr');
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [providerKeyMissing, setProviderKeyMissing] = useState(false);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const { getPreference, hasSecret } = useSettings();
+  // The recording session lives outside this view (see recorderSession.ts), so everything
+  // it needs to finish — job id, provider, language, speaker hint — is held there from
+  // Start. This view can be unmounted and remounted mid-recording without losing any of it.
   const {
-    status, durationMs, error: recorderError, inputLevel, inputSilent,
+    status, durationMs, error: recorderError, inputLevel, inputSilent, inputLost,
     start, pause, resume, stop,
-  } = useRecorder((_jobId) => {});
+  } = useRecorder();
   const [error, setError] = useState<string | null>(null);
   const {
     speakerMode, setSpeakerMode,
@@ -93,23 +97,28 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
       return;
     }
-    const jobId = `job-${Date.now()}`;
-    setCurrentJobId(jobId);
-    await start(jobId, selectedDevice || undefined);
-  };
-
-  const handleStop = async () => {
-    if (providerKeyMissing) {
-      setError(t('provider_key_missing_error').replace('{{provider}}', PROVIDER_LABELS[selectedProvider]));
-      return;
-    }
+    // Validated here, not at Stop: a bad value used to surface only after the meeting, and
+    // refused the Stop that was meant to end it.
     const { hint, error: hintError } = buildSpeakerCountHint();
     if (hintError) { setError(hintError); return; }
     setError(null);
-    const { audioPath } = await stop();
-    const jobId = currentJobId;
-    setCurrentJobId(null);
-    if (!jobId || !audioPath) return;
+    const jobId = `job-${Date.now()}`;
+    await start(jobId, selectedDevice || undefined, {
+      provider: selectedProvider,
+      language: selectedLanguage,
+      speakerCountHint: hint,
+    });
+  };
+
+  const handleStop = async () => {
+    // Stop never refuses: nothing here can be a reason to keep recording. What happens to
+    // the audio afterwards is decided from the settings captured at Start, not from
+    // whatever this view currently shows.
+    setError(null);
+    const result = await stop();
+    if (!result) return;
+    const { jobId, audioPath, config } = result;
+    if (result.error || !jobId || !audioPath || !config) return;
 
     // Navigate to progress view BEFORE starting the job so JobProgressView is
     // mounted and its transcription:progress listener is registered before the
@@ -128,20 +137,21 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
       jobId,
       title: t('record_default_title').replace('{{date}}', new Date().toLocaleString()),
       audioPath,
-      provider: selectedProvider,
+      provider: config.provider,
       model: 'universal',
-      language: selectedLanguage,
-      speakerCountHint: hint,
+      language: config.language,
+      speakerCountHint: config.speakerCountHint,
     }).catch((err) => {
       console.error('Failed to start transcription job:', err);
     });
   };
 
   const isIdle = status === 'idle';
+  const isStarting = status === 'starting';
   // Chromium reports one audioinput entry per device even before labels are unlocked,
   // so an empty list means there is genuinely no microphone — not merely a hidden one.
   const noMicrophone = devicesEnumerated && devices.length === 0;
-  const displayError = recorderError ? t(RECORDER_ERROR_KEY[recorderError]) : error;
+  const displayError = recorderError ? describeRecorderError(recorderError, t) : error;
   const isCapturing = status === 'recording' || status === 'paused';
   // Speech peaks around 0.1-0.3, so a linear bar would barely leave the left edge.
   // The square root spreads the quiet end out enough to see the meter move at all.
@@ -191,13 +201,16 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
         </div>
       )}
 
-      {isCapturing && inputSilent && (
+      {isCapturing && inputLost && (
+        <p className="text-error text-sm mb-4" role="alert">{t('record_input_lost')}</p>
+      )}
+      {isCapturing && inputSilent && !inputLost && (
         <p className="text-error text-sm mb-4" role="alert">{t('record_input_silent')}</p>
       )}
 
       {/* Controls */}
       <div className="record-controls mb-6">
-        {status === 'idle' && (
+        {(isIdle || isStarting) && (
           <>
             {providerKeyMissing && (
               <p className="text-error text-sm mb-4" role="alert">
@@ -212,7 +225,7 @@ export default function RecordView({ onJobStarted }: RecordViewProps): React.Rea
             <button
               className="btn btn-primary btn-lg"
               onClick={handleStart}
-              disabled={!isIdle || !prefsLoaded || noMicrophone}
+              disabled={!isIdle || !prefsLoaded || noMicrophone || isStarting}
             >
               {t('record_btn_start')}
             </button>

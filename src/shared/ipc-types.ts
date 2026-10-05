@@ -169,7 +169,9 @@ export interface IpcChannels {
   'recorder:stop': {
     request: void;
     // Returns the absolute audioPath so the renderer can hand it to transcription:start-job.
-    response: { audioPath: string | null };
+    // writeError is set when the encoder reported a write failure (disk full, folder gone)
+    // during the session: the file may then be partial.
+    response: { audioPath: string | null; writeError?: string };
   };
   'recorder:get-devices': {
     request: void;
@@ -252,7 +254,11 @@ export interface IpcChannels {
 // Sent via mainWindow.webContents.send('recorder:progress', payload).
 export interface RecorderProgress {
   durationMs: number;
-  status: 'recording' | 'paused' | 'stopped';
+  // The main-process recorder status as it is when sent. The renderer only acts on
+  // 'recording' and 'paused'; 'stopped' is not currently sent.
+  status: 'starting' | 'recording' | 'paused' | 'stopping' | 'stopped';
+  // Set once the encoder has reported a write failure; the recording is still running.
+  writeError?: string;
 }
 
 // Derived type — always in sync with IpcChannels, no manual maintenance needed.

@@ -7,6 +7,7 @@ import { registerExportHandlers } from './export';
 import { registerSummaryHandlers } from './summary';
 import { registerLifecycleIpcHandlers } from './lifecycle';
 import { recoverInterruptedJobs } from '../app-lifecycle';
+import { recoverInterruptedRecordings } from '../recorder/recovery';
 import { initDb } from '../db/index';
 
 // S2: Guard against double-registration on hot reload. ipcMain.handle throws on duplicate registration.
@@ -25,4 +26,5 @@ export function registerAllHandlers(): void {
   registerSummaryHandlers();
   registerLifecycleIpcHandlers();
   recoverInterruptedJobs(); // Mark any jobs that were in-progress during a crash as failed
+  recoverInterruptedRecordings(); // Offer recordings cut off before transcription in History
 }

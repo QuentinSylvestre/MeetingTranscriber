@@ -53,6 +53,10 @@ By default, recordings are saved to `Documents\MeetingTranscriber\`. You can cha
 
 While recording, an input level meter shows what is actually reaching the application. If the input stays silent for fifteen seconds the meter turns red and the view says so, because a dead input is otherwise indistinguishable from a working one until the meeting is over. A muted microphone and a headset connected for output only both produce this. The wait is long enough that an ordinary pause in a quiet room does not trigger it. When Windows reports no microphone at all, **Record** is disabled and the view says why rather than failing at the moment you click it.
 
+A recording keeps running when you open another menu. The sidebar shows the elapsed time on every view (click it to return to the recording), and warns there too if the microphone stops delivering sound. The transcription settings (provider, language, speaker count) are fixed when you click **Record**, so changing them in **Settings** mid-meeting does not affect the recording. The speaker count is checked when recording starts. If the recordings folder cannot be written, recording refuses to start and says why, and if writing fails during a recording the view reports it. The computer is kept from sleeping while a recording runs.
+
+If you close the window during a recording, the app asks whether to stop and save it or discard it (a discarded recording is not listed in History, but its audio file stays in the recordings folder). A recording that was cut off in any other way (a crash, a power cut) is added to **History** at the next launch as a failed job with its audio attached; use **Upload** to transcribe it.
+
 ### Upload an existing recording
 
 1. Open the **Upload** view.

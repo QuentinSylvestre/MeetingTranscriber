@@ -54,6 +54,70 @@ function waitForFlush(worker: Worker, timeoutMs: number): Promise<void> {
   });
 }
 
+/** Resolves with the first worker message whose type matches, or rejects on timeout. */
+function waitForMessage(
+  worker: Worker,
+  type: string,
+  timeoutMs: number,
+): Promise<{ type: string; error?: string }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`No '${type}' message within ${timeoutMs}ms`)), timeoutMs);
+    worker.on('message', (msg: { type: string; error?: string }) => {
+      if (msg.type === type) { clearTimeout(timer); resolve(msg); }
+    });
+    worker.on('error', (err) => { clearTimeout(timer); reject(err); });
+  });
+}
+
+describe('recorder/encoder start and failure reporting', () => {
+  it("acknowledges 'started' once the output file is open", async () => {
+    const tmpFile = path.join(os.tmpdir(), `test-enc-started-${Date.now()}.mp3`);
+    const worker = spawnEncoderWorker();
+    const started = waitForMessage(worker, 'started', 15_000);
+    worker.postMessage({ type: 'start', data: { outputPath: tmpFile, sampleRate: 44100 } });
+    await started;
+    expect(fs.existsSync(tmpFile)).toBe(true);
+    const flushed = waitForMessage(worker, 'flushed', 5_000);
+    worker.postMessage({ type: 'flush' });
+    await flushed;
+    await worker.terminate();
+    fs.unlinkSync(tmpFile);
+  }, 25_000);
+
+  it('reports an error, instead of dying silently, when the output folder cannot be created', async () => {
+    // Observed with an unreachable recordings folder: the worker threw inside its message
+    // handler, the parent never heard, and the session recorded nothing while looking normal.
+    // A path whose parent is an existing FILE cannot be created on any platform.
+    const blocker = path.join(os.tmpdir(), `test-enc-blocker-${Date.now()}`);
+    fs.writeFileSync(blocker, 'x');
+    const worker = spawnEncoderWorker();
+    const error = waitForMessage(worker, 'error', 15_000);
+    worker.postMessage({ type: 'start', data: { outputPath: path.join(blocker, 'sub', 'rec.mp3'), sampleRate: 44100 } });
+    const msg = await error;
+    expect(msg.error).toBeTruthy();
+    await worker.terminate();
+    fs.unlinkSync(blocker);
+  }, 25_000);
+
+  it('answers a flush after a failed start with the same error instead of hanging', async () => {
+    const blocker = path.join(os.tmpdir(), `test-enc-blocker2-${Date.now()}`);
+    fs.writeFileSync(blocker, 'x');
+    const worker = spawnEncoderWorker();
+    const messages: { type: string; error?: string }[] = [];
+    worker.on('message', (m: { type: string; error?: string }) => messages.push(m));
+    worker.postMessage({ type: 'start', data: { outputPath: path.join(blocker, 'sub', 'rec.mp3'), sampleRate: 44100 } });
+    worker.postMessage({ type: 'flush' });
+    const deadline = Date.now() + 15_000;
+    while (messages.filter(m => m.type === 'error').length < 2 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    expect(messages.filter(m => m.type === 'error').length).toBeGreaterThanOrEqual(2);
+    expect(messages.some(m => m.type === 'flushed')).toBe(false);
+    await worker.terminate();
+    fs.unlinkSync(blocker);
+  }, 25_000);
+});
+
 describe('recorder/encoder', () => {
   it('produces a valid MP3 with sync word from 1 second of 440 Hz sine wave', async () => {
     const tmpFile = path.join(os.tmpdir(), `test-enc-sine-${Date.now()}.mp3`);

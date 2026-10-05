@@ -23,7 +23,7 @@ import log from 'electron-log';
 export function registerRecorderHandlers(): void {
   ipcMain.handle(
     'recorder:start',
-    async (_event, { jobId, micDeviceId }: { jobId: string; micDeviceId?: string; enableLoopback?: boolean }) => {
+    async (_event, { jobId }: { jobId: string; micDeviceId?: string; enableLoopback?: boolean }) => {
       // F1 Reliability: mutual exclusion — reject if a transcription job is active.
       if (getTranscriptionActiveJobId() !== null) {
         throw new Error('Cannot start recording while a transcription job is active');
@@ -31,7 +31,7 @@ export function registerRecorderHandlers(): void {
       // Build absolute audioPath in main process (F1/F2/F5: renderer must not supply path).
       const recordingsFolder = getPreference('recordingsFolder');
       const audioPath = path.join(recordingsFolder, `${jobId}.mp3`);
-      recorder.startRecording(jobId, audioPath);
+      await recorder.startRecording(jobId, audioPath);
     }
   );
 
@@ -43,15 +43,20 @@ export function registerRecorderHandlers(): void {
     recorder.resumeRecording();
   });
 
+  // Never rejects for an encoder failure: the file on disk is still the user's recording,
+  // so the renderer needs its path alongside the error to tell them where it is.
   ipcMain.handle('recorder:stop', async () => {
+    const audioPath = recorder.getAudioPath();
     try {
-      const audioPath = recorder.getAudioPath();
       await recorder.stopRecording();
-      // Return the audioPath so the renderer can pass it to transcription:start-job.
-      return { audioPath };
+      const writeError = recorder.getWriteError();
+      return writeError ? { audioPath, writeError } : { audioPath };
     } catch (err) {
       log.error('Error stopping recording:', err);
-      throw err;
+      return {
+        audioPath,
+        writeError: recorder.getWriteError() ?? (err instanceof Error ? err.message : String(err)),
+      };
     }
   });
 

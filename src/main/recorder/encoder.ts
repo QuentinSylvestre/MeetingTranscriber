@@ -21,8 +21,13 @@
  *   { type: 'flush' }                      — finalize MP3 and close stream
  *
  * Message protocol (worker → parent):
+ *   { type: 'started' }   — the output file is open; PCM can now be sent
  *   { type: 'flushed' }   — flush complete; file is ready
  *   { type: 'error', error: string }
+ *                         — start failed (folder unusable), a write failed (disk full,
+ *                           drive gone), or flush could not complete. After a write
+ *                           error every later flush answers with this same error
+ *                           instead of waiting on a stream that will never finish.
  */
 
 import { parentPort } from 'worker_threads';
@@ -62,6 +67,13 @@ let encoderLib: EncoderLib | null = null;
 let encoder: InstanceType<EncoderLib['Mp3Encoder']> | null = null;
 let outputStream: fs.WriteStream | null = null;
 let paused = false;
+/** First write/start error, kept so a later flush can report it instead of hanging. */
+let failure: string | null = null;
+
+function fail(message: string): void {
+  if (failure === null) failure = message;
+  parentPort!.postMessage({ type: 'error', error: message });
+}
 
 function getLib(): EncoderLib {
   if (!encoderLib) {
@@ -85,33 +97,44 @@ if (!parentPort) {
 parentPort.on('message', (msg: { type: string; data?: unknown }) => {
   switch (msg.type) {
     case 'start': {
-      const { outputPath, sampleRate } = msg.data as { outputPath: string; sampleRate: number };
-      const lib = getLib();
-      // Resolve the encoder path relative to the worker's working directory
-      // if it's not absolute, to handle relative paths from the renderer.
-      const resolvedPath = path.isAbsolute(outputPath)
-        ? outputPath
-        : path.resolve(process.cwd(), outputPath);
+      try {
+        const { outputPath, sampleRate } = msg.data as { outputPath: string; sampleRate: number };
+        const lib = getLib();
+        // Resolve the encoder path relative to the worker's working directory
+        // if it's not absolute, to handle relative paths from the renderer.
+        const resolvedPath = path.isAbsolute(outputPath)
+          ? outputPath
+          : path.resolve(process.cwd(), outputPath);
 
-      // Ensure the output directory exists.
-      fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
+        // Ensure the output directory exists.
+        fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
 
-      encoder = new lib.Mp3Encoder(CHANNELS, sampleRate, BIT_RATE);
-      paused = false;
-      // Use 'w' — each recording session creates a fresh file.
-      outputStream = fs.createWriteStream(resolvedPath, { flags: 'w' });
-      outputStream.on('error', (err) => {
-        parentPort!.postMessage({ type: 'error', error: err.message });
-      });
+        encoder = new lib.Mp3Encoder(CHANNELS, sampleRate, BIT_RATE);
+        paused = false;
+        failure = null;
+        // Use 'w' — each recording session creates a fresh file.
+        const stream = fs.createWriteStream(resolvedPath, { flags: 'w' });
+        outputStream = stream;
+        stream.on('error', (err) => fail(err.message));
+        // The parent waits for this before it reports 'recording': an unusable folder
+        // used to crash this handler unobserved and the session ran, silent, to the end.
+        stream.once('open', () => parentPort!.postMessage({ type: 'started' }));
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
       break;
     }
 
     case 'pcm': {
-      if (!encoder || !outputStream || paused) break;
-      const pcmData = msg.data as Int16Array;
-      const encoded = encoder.encodeBuffer(pcmData);
-      if (encoded.length > 0) {
-        outputStream.write(Buffer.from(encoded));
+      if (!encoder || !outputStream || paused || failure !== null) break;
+      try {
+        const pcmData = msg.data as Int16Array;
+        const encoded = encoder.encodeBuffer(pcmData);
+        if (encoded.length > 0) {
+          outputStream.write(Buffer.from(encoded));
+        }
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
       }
       break;
     }
@@ -125,17 +148,28 @@ parentPort.on('message', (msg: { type: string; data?: unknown }) => {
       break;
 
     case 'flush': {
-      flush();
-      if (outputStream) {
-        outputStream.end(() => {
-          parentPort!.postMessage({ type: 'flushed' });
+      const stream = outputStream;
+      const earlier = failure;
+      try {
+        if (earlier === null) flush();
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+      encoder = null;
+      outputStream = null;
+      if (earlier !== null) {
+        // The stream already failed: its end() callback may never fire, so answer now.
+        stream?.destroy();
+        parentPort!.postMessage({ type: 'error', error: earlier });
+      } else if (stream) {
+        stream.end((err?: Error | null) => {
+          if (err) parentPort!.postMessage({ type: 'error', error: err.message });
+          else parentPort!.postMessage({ type: 'flushed' });
         });
       } else {
         // No stream was ever opened (flush called without start, or already closed).
         parentPort!.postMessage({ type: 'flushed' });
       }
-      encoder = null;
-      outputStream = null;
       break;
     }
 

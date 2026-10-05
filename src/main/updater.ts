@@ -1,6 +1,7 @@
 import { app, dialog, BrowserWindow } from 'electron';
 import log from 'electron-log';
 import { autoUpdater } from 'electron-updater';
+import { getStatus as getRecorderStatus } from './recorder/index';
 
 let _initialized = false;
 
@@ -25,6 +26,9 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void
     log.info(`Update ${info.version} downloaded`);
     const win = getMainWindow();
     if (!win) return; // install silently on next quit via autoInstallOnAppQuit
+    // Offering a restart in the middle of a meeting is an invitation to lose it. The update
+    // still installs on the next quit.
+    if (getRecorderStatus() !== 'idle') return;
     const { response } = await dialog.showMessageBox(win, {
       type: 'info',
       message: `Update ${info.version} downloaded`,
