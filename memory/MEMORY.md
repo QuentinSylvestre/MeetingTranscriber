@@ -87,3 +87,5 @@
 **Evidence-quote**: "The OpenAI project tied to the app's stored key only has access to gpt-4o — none of the gpt-5.6 models (including gpt-5.6-sol, which is the production feature's hardcoded model)."
 
 ## Declined
+
+- "[improvement_signal] /qclose Pass 2 does not check whether a harness item's suggested change already exists in governance" — declined 2026-10-05 (no reason given)
