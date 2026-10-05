@@ -1,8 +1,8 @@
 # AssemblyAI Speaker-Count Hint
 
 > **Date**: 2026-09-16
-> **Status**: In Progress — implementation complete, manual QA pending  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
-> **Last Updated**: <set by /qclose at archival>
+> **Status**: Complete  <!-- Status grammar: shared/skills/qplan/TEMPLATES.md § Status Grammar -->
+> **Last Updated**: 2026-10-05
 > **Scope**: Add a per-job speaker-count hint (exact or min/max range) to AssemblyAI transcription requests, surfaced in RecordView/UploadView only when AssemblyAI is the active provider.
 
 ---
@@ -304,6 +304,16 @@ In the `## Usage` section:
 All 8 steps implemented as specified, with the divergences noted below (all driven by the per-phase review cycle). `npm test`: 81/81 passing (up from the 78 baseline — 3 new AssemblyAI request-body tests plus 1 new runner.ts assertion). `npx tsc --noEmit`: zero new errors versus the pre-existing baseline, confirmed via a `git stash`/`tsc`/`git stash pop` comparison — the same 12 errors exist on HEAD, all in files this plan never touches (`google.ts`, `useRecorder.ts`, `JobProgressView.tsx`, `mic-capture.worklet.ts`, plus two `@types/node`/`electron.d.ts` declaration conflicts).
 
 **Manual QA not run this session**: the Verification section's manual QA checklist (mandatory per the Context risk note) requires driving the actual Electron desktop window and, for its last bullet, a real AssemblyAI API key/job. Neither is reachable with this session's tool surface — there is no Windows desktop-automation tool available, and the app's dev workflow (`vite-plugin-electron`) launches a genuine Electron `BrowserWindow`, not a plain Chrome tab the browser-automation tooling can attach to; `window.electronAPI` (the preload bridge the views depend on for `getPreference`/`hasSecret` on mount) is also unavailable outside a real Electron renderer, so even a bare Vite dev-server page load would not exercise the real code path. This is an honest tool-surface gap, not a skipped step — see the completion summary for what the user needs to run manually.
+
+### Manual QA result (2026-10-05)
+
+The user ran the manual QA checklist in the real Electron app and reported "I ran both, all good" (this plan and the sibling `260916_TRANSCRIPT_EDIT_TIMESTAMP_FONTSIZE`). The report was a single summary; per-bullet results (including the live AssemblyAI job in each mode) were not itemised. This supersedes the "Manual QA not run this session" note above.
+
+## Completion Summary
+
+### Acknowledged at archival
+
+- Accepted (harness opportunity): `/qdev` Step 9b (exhaustive QA) has no path for an Electron desktop app under this session's tool surface — cost: the mandatory manual QA checklist could not be executed or even partially automated this session, leaving the plan's own flagged renderer-wiring risk unverified at runtime — suggested change: document an Electron-specific QA path (e.g. Playwright's Electron driver, or a `--remote-debugging-port` attach flow) as a recognized `/qqa` BLOCKED-resolution option for Electron projects, rather than leaving each session to rediscover the gap.
 
 ## Implementation Divergences from Plan
 
