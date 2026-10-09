@@ -14,6 +14,14 @@
 **How to apply**: In Claude Code, default to 1 qreview cycle per phase for /qplan and /qdev in this project unless the user says otherwise; in Kiro, keep the maximum-effort review default.
 **Source**: session 015bcce6-ca7a-4076-8989-c86683a6a81a + session e2d6bcee-bbb8-497a-a758-1fcf8d462556 + plan 260925_PRIVATE_FIXTURE_REPO_AND_HISTORY_SCRUB § 9 (Process line) | **Verified**: 2026-09-28 (human:quentin, plan-scan)
 
+### MeetingTranscriber's users are non-technical: fix known UX quirks rather than leaving them as noted issues
+
+**Why**: When the agent listed two cosmetic or edge-case quirks it had chosen to leave, the user told it to fix them because the app is used by non-technical people and must be polished.
+**How to apply**: Do not present a user-visible quirk (layout glitch, mixed state, race window) as acceptable residue; fix it in the same change or escalate it as a defect. (The agent also localized English-only main-process dialogs on its own initiative; that was not part of the user's instruction.)
+**Source**: session cb759486-675c-407e-af62-f06cdff88e2f L1241 | **Verified**: 2026-10-09 (sweep, anchor-reopen)
+**Evidence-quote**: "quirks: fix, app is used by non-technical people, it should be polished"
+
+
 ## Decision
 
 ### User declined a GitHub Support purge after the history rewrite, twice
